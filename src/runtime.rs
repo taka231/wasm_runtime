@@ -3,10 +3,17 @@ use crate::wasm::{Instr, Section, SectionContent};
 #[derive(Debug)]
 pub struct Runtime {
     pub instrs: Vec<Instr>,
-    pub pc: Vec<usize>,
+    pub pc: usize,
     pub stack: Vec<i64>,
-    pub jump_table: Vec<usize>,
     pub locals: Vec<i64>,
+    pub labels: Vec<Label>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Label {
+    sp: usize,
+    is_loop: bool,
+    jump_pc: usize,
 }
 
 impl Runtime {
@@ -16,63 +23,44 @@ impl Runtime {
                 let locals_size = funcs[0].locals.iter().map(|x| x.count).sum::<u32>();
                 return Runtime {
                     instrs: funcs[0].instrs.clone(),
-                    pc: vec![0],
+                    pc: 0,
                     stack: vec![],
-                    jump_table: vec![],
                     locals: vec![0; locals_size as usize],
+                    labels: vec![],
                 };
             }
         }
         panic!("No code section found");
     }
-    fn get_instr(&self) -> &Instr {
-        let mut instr = &self.instrs[self.pc[0]];
-        for pc in &self.pc[1..] {
-            if let Instr::Loop(instrs) = instr {
-                instr = &instrs[*pc];
-            } else {
-                panic!("Invalid pc");
-            }
-        }
-        instr
-    }
-    fn get_current_pc(&self) -> usize {
-        self.pc[self.pc.len() - 1]
-    }
-    fn get_outer_instr(&self) -> &Vec<Instr> {
-        let mut instr = &self.instrs;
-        for pc in &self.pc[..self.pc.len() - 1] {
-            if let Instr::Loop(instrs) = &instr[*pc] {
-                instr = instrs;
-            } else {
-                panic!("Invalid pc");
-            }
-        }
-        instr
-    }
-    fn jump(&mut self, pc: usize) {
-        let len = self.pc.len();
-        self.pc[len - 1] = pc;
-    }
-    fn inc_pc(&mut self) {
-        let len = self.pc.len();
-        self.pc[len - 1] += 1;
-    }
+    // fn get_instr(&self) -> &Instr {
+    //     let mut instr = &self.instrs[self.pc[0]];
+    //     for pc in &self.pc[1..] {
+    //         if let Instr::Loop(instrs) = instr {
+    //             instr = &instrs[*pc];
+    //         } else {
+    //             panic!("Invalid pc");
+    //         }
+    //     }
+    //     instr
+    // }
+    // fn get_current_pc(&self) -> usize {
+    //     self.pc[self.pc.len() - 1]
+    // }
+    // fn get_outer_instr(&self) -> &Vec<Instr> {
+    //     let mut instr = &self.instrs;
+    //     for pc in &self.pc[..self.pc.len() - 1] {
+    //         if let Instr::Loop(instrs) = &instr[*pc] {
+    //             instr = instrs;
+    //         } else {
+    //             panic!("Invalid pc");
+    //         }
+    //     }
+    //     instr
+    // }
     pub fn run(&mut self) {
         loop {
-            let current_pc = self.get_current_pc();
-            if self.pc.len() == 1 && current_pc >= self.instrs.len() {
-                break;
-            }
-            let outer_instrs = self.get_outer_instr();
-            if current_pc >= outer_instrs.len() {
-                self.pc.pop();
-                self.jump_table.pop();
-                self.inc_pc();
-                continue;
-            }
-            let instr = self.get_instr();
-            match instr {
+            let pc = self.pc;
+            match &self.instrs[pc] {
                 Instr::I64Const(n) => {
                     self.stack.push(*n);
                 }
@@ -95,25 +83,46 @@ impl Runtime {
                     let value = self.locals[*n as usize];
                     self.stack.push(value);
                 }
-                Instr::Loop(_) => {
-                    self.pc.push(0);
-                    self.jump_table.push(0);
-                    continue;
+                Instr::Loop {
+                    block_type: _,
+                    jump_pc,
+                } => {
+                    self.labels.push(Label {
+                        sp: self.stack.len(),
+                        is_loop: true,
+                        jump_pc: *jump_pc,
+                    });
                 }
                 Instr::BrIf(n) => {
                     let n = *n;
                     let value = self.stack.pop().unwrap();
                     if value != 0 {
-                        for _ in 0..n {
-                            self.pc.pop();
-                            self.jump_table.pop();
+                        for i in (0..=n).rev() {
+                            match self.labels.last() {
+                                Some(Label {
+                                    sp,
+                                    jump_pc,
+                                    is_loop,
+                                }) => {
+                                    self.stack.truncate(*sp);
+                                    self.pc = *jump_pc;
+                                    if !(*is_loop && i == 0) {
+                                        self.labels.pop();
+                                    }
+                                }
+                                None => break,
+                            }
                         }
-                        self.jump(*self.jump_table.last().unwrap());
-                        continue;
                     }
                 }
+                Instr::End => match self.labels.pop() {
+                    Some(Label { sp, .. }) => {
+                        self.stack.truncate(sp);
+                    }
+                    None => break,
+                },
             }
-            self.inc_pc();
+            self.pc += 1;
         }
     }
 }

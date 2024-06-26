@@ -1,16 +1,22 @@
-use crate::wasm::{Func, Instr, Locals, Opcode, Section, SectionContent, ValType};
+use crate::wasm::{BlockType, Func, Instr, Locals, Opcode, Section, SectionContent, ValType};
 
 #[derive(Debug)]
 pub struct Parser<'a> {
     bytes: &'a [u8],
     pos: usize,
+    // label_stack has control instruction's pc
+    label_stack: Vec<Option<usize>>,
 }
 
 type Result<T> = std::result::Result<T, String>;
 
 impl<'a> Parser<'a> {
     pub fn new(bytes: &'a [u8]) -> Self {
-        Parser { bytes, pos: 0 }
+        Parser {
+            bytes,
+            pos: 0,
+            label_stack: Vec::new(),
+        }
     }
     pub fn parse(&mut self) -> Result<Vec<Section>> {
         let magic = self.bytes.get(self.pos..self.pos + 4);
@@ -132,8 +138,34 @@ impl<'a> Parser<'a> {
                 locals.push(Locals { count: n, ty });
             }
             let mut instrs = Vec::new();
+            // label for function
+            self.label_stack.push(None);
             while self.pos < current_pos + func_size as usize {
                 if let Ok(instr) = self.parse_instr() {
+                    let instr = match instr {
+                        Instr::Loop {
+                            block_type,
+                            jump_pc: _,
+                        } => {
+                            self.label_stack.push(None);
+                            Instr::Loop {
+                                block_type,
+                                // pc of loop instruction
+                                jump_pc: instrs.len(),
+                            }
+                        }
+                        Instr::End => {
+                            match self.label_stack.pop() {
+                                Some(Some(_)) => unimplemented!(),
+                                Some(None) => {}
+                                None => {
+                                    return Err("unexpected end".to_string());
+                                }
+                            };
+                            Instr::End
+                        }
+                        _ => instr,
+                    };
                     instrs.push(instr);
                 }
             }
@@ -177,15 +209,14 @@ impl<'a> Parser<'a> {
                 Ok(Instr::BrIf(labelidx))
             }
             Opcode::Loop => {
-                // block typeは無視
-                self.next_byte()?;
-                let mut instrs = Vec::new();
-                while self.bytes.get(self.pos) != Some(&0x0b) {
-                    let instr = self.parse_instr()?;
-                    instrs.push(instr);
-                }
-                Ok(Instr::Loop(instrs))
+                let block_type = self.parse_blocktype()?;
+                Ok(Instr::Loop {
+                    block_type,
+                    // dummy value
+                    jump_pc: 0,
+                })
             }
+            Opcode::End => Ok(Instr::End),
         }
     }
     fn parse_data(&mut self, size: u32) -> Result<SectionContent> {
@@ -218,6 +249,15 @@ impl<'a> Parser<'a> {
         self.next_byte()
             .map_err(|err| format!("{err}: expected valtype"))?
             .try_into()
+    }
+    fn parse_blocktype(&mut self) -> Result<BlockType> {
+        let byte = self
+            .next_byte()
+            .map_err(|err| format!("{err}: expected blocktype"))?;
+        Ok(match byte {
+            0x40 => BlockType::Empty,
+            _ => BlockType::ValType(byte.try_into()?),
+        })
     }
     fn parse_leb128_u32(&mut self) -> Result<u32> {
         let mut result = 0;

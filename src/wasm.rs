@@ -58,6 +58,12 @@ pub struct Func {
 }
 
 #[derive(Debug, Clone)]
+pub enum BlockType {
+    Empty,
+    ValType(ValType),
+}
+
+#[derive(Debug, Clone)]
 pub enum Instr {
     I64Const(i64),
     I64Add,
@@ -65,7 +71,11 @@ pub enum Instr {
     LocalSet(u32),
     LocalGet(u32),
     BrIf(u32),
-    Loop(Vec<Instr>),
+    Loop {
+        block_type: BlockType,
+        jump_pc: usize,
+    },
+    End,
 }
 
 #[derive(Debug)]
@@ -84,6 +94,7 @@ pub enum Opcode {
     LocalGet = 0x20,
     BrIf = 0x0d,
     Loop = 0x03,
+    End = 0x0b,
 }
 
 impl TryFrom<u8> for Opcode {
@@ -98,6 +109,7 @@ impl TryFrom<u8> for Opcode {
             0x20 => Ok(Opcode::LocalGet),
             0x0d => Ok(Opcode::BrIf),
             0x03 => Ok(Opcode::Loop),
+            0x0b => Ok(Opcode::End),
             _ => Err(format!("Invalid opcode: 0x{:02x}", value)),
         }
     }
