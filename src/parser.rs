@@ -215,19 +215,9 @@ impl<'a> Parser<'a> {
             .ok_or("Unexpected EOF".to_string())
     }
     fn parse_valtype(&mut self) -> Result<ValType> {
-        let byte = self
-            .next_byte()
-            .map_err(|err| format!("{err}: expected valtype"))?;
-        match byte {
-            0x7f => Ok(ValType::I32),
-            0x7e => Ok(ValType::I64),
-            0x7d => Ok(ValType::F32),
-            0x7c => Ok(ValType::F64),
-            0x7b => Ok(ValType::V128),
-            0x70 => Ok(ValType::FuncRef),
-            0x6f => Ok(ValType::ExternRef),
-            _ => Err(format!("Invalid valtype: {:x}", byte)),
-        }
+        self.next_byte()
+            .map_err(|err| format!("{err}: expected valtype"))?
+            .try_into()
     }
     fn parse_leb128_u32(&mut self) -> Result<u32> {
         let mut result = 0;
