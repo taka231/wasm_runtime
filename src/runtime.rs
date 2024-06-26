@@ -1,4 +1,4 @@
-use crate::parser::{Instr, Section, SectionContent};
+use crate::wasm::{Instr, Section, SectionContent};
 
 #[derive(Debug)]
 pub struct Runtime {

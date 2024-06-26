@@ -1,5 +1,6 @@
-use wasm_runtime::parser::{Parser, SectionContent};
+use wasm_runtime::parser::Parser;
 use wasm_runtime::runtime::Runtime;
+use wasm_runtime::wasm::SectionContent;
 
 fn main() {
     let bytes = include_bytes!("../tests/wasm/sample.wasm");
@@ -23,7 +24,7 @@ fn main() {
             for func in funcs {
                 println!("function size: {:x}", func.size);
                 for instr in &func.instrs {
-                    if let wasm_runtime::parser::Instr::I64Const(n) = instr {
+                    if let wasm_runtime::wasm::Instr::I64Const(n) = instr {
                         println!("  I64Const({})", n);
                     }
                 }
