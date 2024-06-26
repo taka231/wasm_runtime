@@ -1,4 +1,4 @@
-use crate::wasm::{Func, Instr, Locals, Section, SectionContent, ValType};
+use crate::wasm::{Func, Instr, Locals, Opcode, Section, SectionContent, ValType};
 
 #[derive(Debug)]
 pub struct Parser<'a> {
@@ -155,27 +155,28 @@ impl<'a> Parser<'a> {
     fn parse_instr(&mut self) -> Result<Instr> {
         let opcode = self
             .next_byte()
-            .map_err(|err| format!("{err}: expected opcode"))?;
+            .map_err(|err| format!("{err}: expected opcode"))?
+            .try_into()?;
         match opcode {
-            0x42 => {
+            Opcode::I64Const => {
                 let value = self.parse_leb128_i64()?;
                 Ok(Instr::I64Const(value))
             }
-            0x7c => Ok(Instr::I64Add),
-            0x54 => Ok(Instr::I64LtU),
-            0x20 => {
+            Opcode::I64Add => Ok(Instr::I64Add),
+            Opcode::I64LtU => Ok(Instr::I64LtU),
+            Opcode::LocalGet => {
                 let localidx = self.parse_leb128_u32()?;
                 Ok(Instr::LocalGet(localidx))
             }
-            0x21 => {
+            Opcode::LocalSet => {
                 let localidx = self.parse_leb128_u32()?;
                 Ok(Instr::LocalSet(localidx))
             }
-            0x0d => {
+            Opcode::BrIf => {
                 let labelidx = self.parse_leb128_u32()?;
                 Ok(Instr::BrIf(labelidx))
             }
-            0x03 => {
+            Opcode::Loop => {
                 // block typeは無視
                 self.next_byte()?;
                 let mut instrs = Vec::new();
@@ -185,7 +186,6 @@ impl<'a> Parser<'a> {
                 }
                 Ok(Instr::Loop(instrs))
             }
-            _ => Err(format!("Invalid opcode: {:x}", opcode)),
         }
     }
     fn parse_data(&mut self, size: u32) -> Result<SectionContent> {
