@@ -259,6 +259,7 @@ impl<'a> Parser<'a> {
             result |= ((byte & 0x7f) as u64).wrapping_shl(shift) as u64;
             shift += 7;
             if byte & 0x80 == 0 {
+                // if the sign bit is set, sign extend
                 if (shift < 64) && (byte & 0x40 != 0) {
                     result |= !0 << shift;
                 }
