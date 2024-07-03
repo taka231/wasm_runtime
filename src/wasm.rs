@@ -15,32 +15,51 @@ pub enum SectionContent {
     DataCount,
 }
 
-#[repr(u8)]
-#[derive(Debug, Clone, Copy)]
-pub enum ValType {
-    I32 = 0x7f,
-    I64 = 0x7e,
-    F32 = 0x7d,
-    F64 = 0x7c,
-    V128 = 0x7b,
-    FuncRef = 0x70,
-    ExternRef = 0x6f,
+macro_rules! enum_try_from_int {
+    (
+        #[repr($T: ident)]
+        $( #[$meta: meta] )*
+        $vis: vis enum $Name: ident {
+            $(
+                $Variant: ident = $value: expr
+            ),*
+            $( , )?
+        }
+    ) => {
+        #[repr($T)]
+        $( #[$meta] )*
+        $vis enum $Name {
+            $(
+                $Variant = $value
+            ),*
+        }
+
+        impl std::convert::TryFrom<$T> for $Name {
+            type Error = ();
+
+            fn try_from(value: $T) -> Result<$Name, ()> {
+                match value {
+                    $(
+                        $value => Ok($Name::$Variant),
+                    )*
+                    _ => Err(())
+                }
+            }
+        }
+    }
 }
 
-impl TryFrom<u8> for ValType {
-    type Error = String;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0x7f => Ok(ValType::I32),
-            0x7e => Ok(ValType::I64),
-            0x7d => Ok(ValType::F32),
-            0x7c => Ok(ValType::F64),
-            0x7b => Ok(ValType::V128),
-            0x70 => Ok(ValType::FuncRef),
-            0x6f => Ok(ValType::ExternRef),
-            _ => Err(format!("Invalid valtype: 0x{:02x}", value)),
-        }
+enum_try_from_int! {
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy)]
+    pub enum ValType {
+        I32 = 0x7f,
+        I64 = 0x7e,
+        F32 = 0x7d,
+        F64 = 0x7c,
+        V128 = 0x7b,
+        FuncRef = 0x70,
+        ExternRef = 0x6f,
     }
 }
 
@@ -65,17 +84,20 @@ pub enum BlockType {
 
 #[derive(Debug, Clone)]
 pub enum Instr {
-    I64Const(i64),
-    I64Add,
-    I64LtU,
-    LocalSet(u32),
-    LocalGet(u32),
-    BrIf(u32),
     Loop {
         block_type: BlockType,
         jump_pc: usize,
     },
     End,
+    BrIf(u32),
+    LocalGet(u32),
+    LocalSet(u32),
+    I32Const(i32),
+    I64Const(i64),
+    Iunop(Opcode),
+    Ibinop(Opcode),
+    Itestop(Opcode),
+    Irelop(Opcode),
 }
 
 #[derive(Debug)]
@@ -84,33 +106,110 @@ pub struct Section {
     pub size: u32,
 }
 
-#[repr(u8)]
-#[derive(Debug, PartialEq)]
-pub enum Opcode {
-    I64Const = 0x42,
-    I64Add = 0x7c,
-    I64LtU = 0x54,
-    LocalSet = 0x21,
-    LocalGet = 0x20,
-    BrIf = 0x0d,
-    Loop = 0x03,
-    End = 0x0b,
+enum_try_from_int! {
+    #[repr(u8)]
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum Opcode {
+        Loop = 0x03,
+        End = 0x0b,
+        BrIf = 0x0d,
+        LocalGet = 0x20,
+        LocalSet = 0x21,
+        I32Const = 0x41,
+        I64Const = 0x42,
+        I32Eqz = 0x45,
+        I32Eq = 0x46,
+        I32Ne = 0x47,
+        I32LtS = 0x48,
+        I32LtU = 0x49,
+        I32GtS = 0x4a,
+        I32GtU = 0x4b,
+        I32LeS = 0x4c,
+        I32LeU = 0x4d,
+        I32GeS = 0x4e,
+        I32GeU = 0x4f,
+        I64Eqz = 0x50,
+        I64Eq = 0x51,
+        I64Ne = 0x52,
+        I64LtS = 0x53,
+        I64LtU = 0x54,
+        I64GtS = 0x55,
+        I64GtU = 0x56,
+        I64LeS = 0x57,
+        I64LeU = 0x58,
+        I64GeS = 0x59,
+        I64GeU = 0x5a,
+        I32Clz = 0x67,
+        I32Ctz = 0x68,
+        I32Popcnt = 0x69,
+        I32Add = 0x6a,
+        I32Sub = 0x6b,
+        I32Mul = 0x6c,
+        I32DivS = 0x6d,
+        I32DivU = 0x6e,
+        I32RemS = 0x6f,
+        I32RemU = 0x70,
+        I32And = 0x71,
+        I32Or = 0x72,
+        I32Xor = 0x73,
+        I32Shl = 0x74,
+        I32ShrS = 0x75,
+        I32ShrU = 0x76,
+        I32Rotl = 0x77,
+        I32Rotr = 0x78,
+        I64Clz = 0x79,
+        I64Ctz = 0x7a,
+        I64Popcnt = 0x7b,
+        I64Add = 0x7c,
+        I64Sub = 0x7d,
+        I64Mul = 0x7e,
+        I64DivS = 0x7f,
+        I64DivU = 0x80,
+        I64RemS = 0x81,
+        I64RemU = 0x82,
+        I64And = 0x83,
+        I64Or = 0x84,
+        I64Xor = 0x85,
+        I64Shl = 0x86,
+        I64ShrS = 0x87,
+        I64ShrU = 0x88,
+        I64Rotl = 0x89,
+        I64Rotr = 0x8a,
+    }
 }
 
-impl TryFrom<u8> for Opcode {
-    type Error = String;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0x42 => Ok(Opcode::I64Const),
-            0x7c => Ok(Opcode::I64Add),
-            0x54 => Ok(Opcode::I64LtU),
-            0x21 => Ok(Opcode::LocalSet),
-            0x20 => Ok(Opcode::LocalGet),
-            0x0d => Ok(Opcode::BrIf),
-            0x03 => Ok(Opcode::Loop),
-            0x0b => Ok(Opcode::End),
-            _ => Err(format!("Invalid opcode: 0x{:02x}", value)),
+impl Opcode {
+    pub fn is_iunop(&self) -> bool {
+        use Opcode::*;
+        match self {
+            I32Clz | I32Ctz | I32Popcnt | I64Clz | I64Ctz | I64Popcnt => true,
+            _ => false,
+        }
+    }
+    pub fn is_ibinop(&self) -> bool {
+        use Opcode::*;
+        match self {
+            I32Add | I32Sub | I32Mul | I32DivS | I32DivU | I32RemS | I32RemU | I32And | I32Or
+            | I32Xor | I32Shl | I32ShrS | I32ShrU | I32Rotl | I32Rotr | I64Add | I64Sub
+            | I64Mul | I64DivS | I64DivU | I64RemS | I64RemU | I64And | I64Or | I64Xor | I64Shl
+            | I64ShrS | I64ShrU | I64Rotl | I64Rotr => true,
+            _ => false,
+        }
+    }
+    pub fn is_itestop(&self) -> bool {
+        use Opcode::*;
+        match self {
+            I32Eqz | I64Eqz => true,
+            _ => false,
+        }
+    }
+    pub fn is_irelop(&self) -> bool {
+        use Opcode::*;
+        match self {
+            I32Eq | I32Ne | I32LtS | I32LtU | I32GtS | I32GtU | I32LeS | I32LeU | I32GeS
+            | I32GeU | I64Eq | I64Ne | I64LtS | I64LtU | I64GtS | I64GtU | I64LeS | I64LeU
+            | I64GeS | I64GeU => true,
+            _ => false,
         }
     }
 }

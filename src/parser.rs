@@ -188,14 +188,17 @@ impl<'a> Parser<'a> {
         let opcode = self
             .next_byte()
             .map_err(|err| format!("{err}: expected opcode"))?
-            .try_into()?;
+            .try_into()
+            .map_err(|_| format!("invalid opcode"))?;
         match opcode {
             Opcode::I64Const => {
                 let value = self.parse_leb128_i64()?;
                 Ok(Instr::I64Const(value))
             }
-            Opcode::I64Add => Ok(Instr::I64Add),
-            Opcode::I64LtU => Ok(Instr::I64LtU),
+            Opcode::I32Const => {
+                let value = self.parse_leb128_i32()?;
+                Ok(Instr::I32Const(value as i32))
+            }
             Opcode::LocalGet => {
                 let localidx = self.parse_leb128_u32()?;
                 Ok(Instr::LocalGet(localidx))
@@ -217,6 +220,19 @@ impl<'a> Parser<'a> {
                 })
             }
             Opcode::End => Ok(Instr::End),
+            op => {
+                if op.is_iunop() {
+                    Ok(Instr::Iunop(op))
+                } else if op.is_ibinop() {
+                    Ok(Instr::Ibinop(op))
+                } else if op.is_itestop() {
+                    Ok(Instr::Itestop(op))
+                } else if op.is_irelop() {
+                    Ok(Instr::Irelop(op))
+                } else {
+                    unreachable!("uncovered opcode: {:?}", op)
+                }
+            }
         }
     }
     fn parse_data(&mut self, size: u32) -> Result<SectionContent> {
@@ -249,6 +265,7 @@ impl<'a> Parser<'a> {
         self.next_byte()
             .map_err(|err| format!("{err}: expected valtype"))?
             .try_into()
+            .map_err(|_| format!("invalid valtype"))
     }
     fn parse_blocktype(&mut self) -> Result<BlockType> {
         let byte = self
@@ -256,7 +273,7 @@ impl<'a> Parser<'a> {
             .map_err(|err| format!("{err}: expected blocktype"))?;
         Ok(match byte {
             0x40 => BlockType::Empty,
-            _ => BlockType::ValType(byte.try_into()?),
+            _ => BlockType::ValType(byte.try_into().map_err(|_| "invalid blocktype")?),
         })
     }
     fn parse_leb128_u32(&mut self) -> Result<u32> {
@@ -284,6 +301,27 @@ impl<'a> Parser<'a> {
                 .next_byte()
                 .map_err(|err| format!("{err}: while parsing u32"))?;
             if shift >= 71 {
+                return Err("Invalid LEB128 encoding".to_string());
+            }
+            result |= ((byte & 0x7f) as u64).wrapping_shl(shift) as u64;
+            shift += 7;
+            if byte & 0x80 == 0 {
+                // if the sign bit is set, sign extend
+                if (shift < 64) && (byte & 0x40 != 0) {
+                    result |= !0 << shift;
+                }
+                break Ok(result as i64);
+            }
+        }
+    }
+    fn parse_leb128_i32(&mut self) -> Result<i64> {
+        let mut result = 0;
+        let mut shift = 0;
+        loop {
+            let byte = self
+                .next_byte()
+                .map_err(|err| format!("{err}: while parsing u32"))?;
+            if shift >= 39 {
                 return Err("Invalid LEB128 encoding".to_string());
             }
             result |= ((byte & 0x7f) as u64).wrapping_shl(shift) as u64;
