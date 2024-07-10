@@ -235,8 +235,28 @@ impl Runtime {
                     };
                     self.stack.push(result);
                 }
-                Instr::Iunop(_) => todo!(),
-                Instr::Itestop(_) => todo!(),
+                Instr::Iunop(op) => {
+                    let a = self.stack.pop().ok_or("expected value")?;
+                    let result = match op {
+                        Opcode::I32Clz => (a.as_i32()?.leading_zeros() as i32).into(),
+                        Opcode::I32Ctz => (a.as_i32()?.trailing_zeros() as i32).into(),
+                        Opcode::I32Popcnt => (a.as_i32()?.count_ones() as i32).into(),
+                        Opcode::I64Clz => (a.as_i64()?.leading_zeros() as i64).into(),
+                        Opcode::I64Ctz => (a.as_i64()?.trailing_zeros() as i64).into(),
+                        Opcode::I64Popcnt => (a.as_i64()?.count_ones() as i64).into(),
+                        _ => unreachable!("opcode {:?} is not a unop", op),
+                    };
+                    self.stack.push(result);
+                }
+                Instr::Itestop(op) => {
+                    let a = self.stack.pop().ok_or("expected value")?;
+                    let result = match op {
+                        Opcode::I32Eqz => ((a.as_i32()? == 0) as i32).into(),
+                        Opcode::I64Eqz => ((a.as_i64()? == 0) as i32).into(),
+                        _ => unreachable!("opcode {:?} is not a testop", op),
+                    };
+                    self.stack.push(result);
+                }
             }
             self.pc += 1;
         }
