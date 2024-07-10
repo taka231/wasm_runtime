@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 #[derive(Debug)]
 pub enum SectionContent {
     Custom { name: String },
@@ -7,12 +9,20 @@ pub enum SectionContent {
     Table,
     Memory,
     Global,
-    Export,
+    Export(HashMap<String, ExportDesc>),
     Start,
     Element,
     Code(Vec<Func>),
     Data,
     DataCount,
+}
+
+#[derive(Debug)]
+pub enum ExportDesc {
+    Func(u32),
+    Table(u32),
+    Memory(u32),
+    Global(u32),
 }
 
 macro_rules! enum_try_from_int {

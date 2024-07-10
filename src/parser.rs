@@ -1,4 +1,8 @@
-use crate::wasm::{BlockType, Func, Instr, Locals, Opcode, Section, SectionContent, ValType};
+use std::collections::HashMap;
+
+use crate::wasm::{
+    BlockType, ExportDesc, Func, Instr, Locals, Opcode, Section, SectionContent, ValType,
+};
 
 #[derive(Debug)]
 pub struct Parser<'a> {
@@ -110,8 +114,25 @@ impl<'a> Parser<'a> {
     }
     fn parse_export(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
-        self.pos = skip_pos;
-        Ok(SectionContent::Export)
+        let count = self.parse_leb128_u32()?;
+        let mut exports = HashMap::new();
+        for _ in 0..count {
+            let name = self.parse_name()?;
+            let desc = self.next_byte()?;
+            let idx = self.parse_leb128_u32()?;
+            let desc = match desc {
+                0x00 => ExportDesc::Func(idx),
+                0x01 => ExportDesc::Table(idx),
+                0x02 => ExportDesc::Memory(idx),
+                0x03 => ExportDesc::Global(idx),
+                _ => {
+                    return Err("Invalid export description".to_string());
+                }
+            };
+            exports.insert(name, desc);
+        }
+        self.ensure_section_end(skip_pos)?;
+        Ok(SectionContent::Export(exports))
     }
     fn parse_start(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
