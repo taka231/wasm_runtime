@@ -1,11 +1,29 @@
-use crate::wasm::{Instr, Opcode, Section, SectionContent};
+use std::collections::HashMap;
+
+use crate::wasm::{
+    ExportDesc, Func, FuncType, ImportDesc, Instr, Locals, Opcode, Section, SectionContent,
+    TypeIdx, ValType,
+};
 
 #[derive(Debug)]
 pub struct Runtime {
-    pub instrs: Vec<Instr>,
-    pub pc: usize,
     pub stack: Vec<Value>,
-    pub locals: Vec<Option<Value>>,
+    pub codes: Vec<Func>,
+    pub func_types: Vec<TypeIdx>,
+    pub types: Vec<FuncType>,
+    pub imports: Option<HashMap<(String, String), ImportDesc>>,
+    pub exports: Option<HashMap<String, ExportDesc>>,
+    pub func_offset: u32,
+    pub frames: Vec<Frame>,
+}
+
+#[derive(Debug)]
+pub struct Frame {
+    pub pc: usize,
+    pub sp: usize,
+    pub instrs: Vec<Instr>,
+    pub return_num: usize,
+    pub locals: Vec<Value>,
     pub labels: Vec<Label>,
 }
 
@@ -78,24 +96,104 @@ pub struct Label {
 
 impl Runtime {
     pub fn new(sections: Vec<Section>) -> Runtime {
+        let mut codes = None;
+        let mut types = None;
+        let mut func_types = None;
+        let mut imports = None;
+        let mut exports = None;
+        let mut func_offset = 0;
         for section in sections {
             if let SectionContent::Code(funcs) = section.content {
-                let locals_size = funcs[0].locals.iter().map(|x| x.count).sum::<u32>();
-                return Runtime {
-                    instrs: funcs[0].instrs.clone(),
-                    pc: 0,
-                    stack: vec![],
-                    locals: vec![None; locals_size as usize],
-                    labels: vec![],
-                };
+                codes = Some(funcs);
+            } else if let SectionContent::Function(functypes) = section.content {
+                func_types = Some(functypes);
+            } else if let SectionContent::Type(func_types) = section.content {
+                types = Some(func_types);
+            } else if let SectionContent::Import {
+                import_map,
+                import_func_count,
+            } = section.content
+            {
+                imports = Some(import_map);
+                func_offset = import_func_count;
+            } else if let SectionContent::Export(export_map) = section.content {
+                exports = Some(export_map);
+            };
+        }
+        if codes.is_none() {
+            panic!("Code section not found");
+        } else if types.is_none() {
+            panic!("Type section not found");
+        } else if func_types.is_none() {
+            panic!("Function section not found");
+        }
+
+        Runtime {
+            stack: Vec::new(),
+            codes: codes.unwrap(),
+            func_types: func_types.unwrap(),
+            types: types.unwrap(),
+            imports,
+            exports,
+            func_offset,
+            frames: Vec::new(),
+        }
+    }
+
+    pub fn call_with_name(&mut self, name: &str, args: Vec<Value>) -> Result<Vec<Value>, String> {
+        let exports = self.exports.as_ref().ok_or("Export section not found")?;
+        let export_desc = exports.get(name).ok_or("Export not found")?;
+        let func_idx = match export_desc {
+            ExportDesc::Func(idx) => *idx as usize,
+            _ => return Err("Export is not a function".to_string()),
+        };
+        let func_type_idx = self.func_types[func_idx];
+        self.call(func_idx)?;
+        let func_type = self
+            .types
+            .get(func_type_idx as usize)
+            .ok_or("Type not found")?;
+        for arg in args {
+            self.stack.push(arg);
+        }
+        let result_num = func_type.results.len();
+        let results = self.stack.split_off(self.stack.len() - result_num);
+        Ok(results)
+    }
+
+    pub fn call(&mut self, idx: usize) -> Result<(), String> {
+        let func = self.codes.get(idx).ok_or("Function not found")?;
+        let fun_type_idx = self.func_types[idx];
+        let fun_type = self
+            .types
+            .get(fun_type_idx as usize)
+            .ok_or("Type not found")?;
+        let bottom = self.stack.len() - fun_type.params.len();
+        let mut locals = self.stack.split_off(bottom);
+        for Locals { count, ty } in &func.locals {
+            for _ in 0..*count {
+                locals.push(match ty {
+                    ValType::I32 => Value::I32(0),
+                    ValType::I64 => Value::I64(0),
+                    ValType::F32 => Value::F32(0.0),
+                    ValType::F64 => Value::F64(0.0),
+                    ValType::V128 => todo!(),
+                    ValType::FuncRef => todo!(),
+                    ValType::ExternRef => todo!(),
+                });
             }
         }
-        panic!("No code section found");
-    }
-    pub fn run(&mut self) -> Result<(), String> {
+        let mut frame = Frame {
+            pc: 0,
+            sp: self.stack.len(),
+            instrs: func.instrs.clone(),
+            return_num: fun_type.results.len(),
+            locals,
+            labels: vec![],
+        };
         loop {
-            let pc = self.pc;
-            match &self.instrs[pc] {
+            let pc = frame.pc;
+            match &frame.instrs[pc] {
                 Instr::I64Const(n) => {
                     self.stack.push(n.into());
                 }
@@ -105,19 +203,17 @@ impl Runtime {
                 Instr::LocalSet(n) => {
                     let n = *n;
                     let value = self.stack.pop().ok_or("expected value")?;
-                    self.locals[n as usize] = value.into();
+                    frame.locals[n as usize] = value.into();
                 }
                 Instr::LocalGet(n) => {
-                    let value = self.locals[*n as usize]
-                        .clone()
-                        .ok_or("Local not initialized")?;
+                    let value = frame.locals[*n as usize].clone();
                     self.stack.push(value);
                 }
                 Instr::Loop {
                     block_type: _,
                     jump_pc,
                 } => {
-                    self.labels.push(Label {
+                    frame.labels.push(Label {
                         sp: self.stack.len(),
                         is_loop: true,
                         jump_pc: *jump_pc,
@@ -128,16 +224,16 @@ impl Runtime {
                     let value = self.stack.pop().ok_or("expected value")?;
                     if value.as_i32()? != 0 {
                         for i in (0..=n).rev() {
-                            match self.labels.last() {
+                            match frame.labels.last() {
                                 Some(Label {
                                     sp,
                                     jump_pc,
                                     is_loop,
                                 }) => {
                                     self.stack.truncate(*sp);
-                                    self.pc = *jump_pc;
+                                    frame.pc = *jump_pc;
                                     if !(*is_loop && i == 0) {
-                                        self.labels.pop();
+                                        frame.labels.pop();
                                     }
                                 }
                                 None => break,
@@ -145,7 +241,7 @@ impl Runtime {
                         }
                     }
                 }
-                Instr::End => match self.labels.pop() {
+                Instr::End => match frame.labels.pop() {
                     Some(Label { sp, .. }) => {
                         self.stack.truncate(sp);
                     }
@@ -258,7 +354,16 @@ impl Runtime {
                     self.stack.push(result);
                 }
             }
-            self.pc += 1;
+            frame.pc += 1;
+        }
+        let result_num = frame.return_num;
+        let mut pop_vec = Vec::new();
+        for _ in 0..result_num {
+            pop_vec.push(self.stack.pop().ok_or("expected value")?);
+        }
+        self.stack.truncate(frame.sp);
+        while let Some(value) = pop_vec.pop() {
+            self.stack.push(value);
         }
         Ok(())
     }

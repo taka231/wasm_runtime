@@ -10,8 +10,8 @@ fn main() {
     println!("{:?}", sections);
     println!("(6)");
     let mut runtime = Runtime::new(sections);
-    runtime.run();
-    println!("{:?}", runtime.stack[0]);
+    let result = runtime.call_with_name("_start", Vec::new());
+    println!("{:?}", result);
     // (7)
     // 1~10までの和を計算するsum.wasmを実行出来るようにする
     let sum_bytes = include_bytes!("../tests/wasm/sum.wasm");
@@ -21,6 +21,6 @@ fn main() {
     println!("{:?}", sections);
     println!("(7)(6)");
     let mut runtime = Runtime::new(sections);
-    runtime.run();
-    println!("{:?}", runtime.stack[0]);
+    let result = runtime.call_with_name("_start", Vec::new());
+    println!("{:?}", result);
 }
