@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use crate::wasm::{
-    BlockType, ExportDesc, Func, Instr, Locals, Opcode, Section, SectionContent, ValType,
+    BlockType, ExportDesc, Func, FuncType, ImportDesc, Instr, Locals, Opcode, ResultType, Section,
+    SectionContent, ValType,
 };
 
 #[derive(Debug)]
@@ -84,18 +85,53 @@ impl<'a> Parser<'a> {
     }
     fn parse_type(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
-        self.pos = skip_pos;
-        Ok(SectionContent::Type)
+        let count = self.parse_leb128_u32()?;
+        let mut types = Vec::new();
+        for _ in 0..count {
+            let ty = self.parse_funtype()?;
+            types.push(ty);
+        }
+        self.ensure_section_end(skip_pos)?;
+        Ok(SectionContent::Type(types))
     }
     fn parse_import(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
-        self.pos = skip_pos;
-        Ok(SectionContent::Import)
+        let count = self.parse_leb128_u32()?;
+        let mut imports = HashMap::new();
+        let mut import_func_count = 0;
+        for _ in 0..count {
+            let module = self.parse_name()?;
+            let name = self.parse_name()?;
+            let desc = match self.next_byte()? {
+                0x00 => {
+                    import_func_count += 1;
+                    ImportDesc::Func(self.parse_leb128_u32()?)
+                }
+                0x01 => ImportDesc::Table(self.parse_leb128_u32()?),
+                0x02 => ImportDesc::Memory(self.parse_leb128_u32()?),
+                0x03 => ImportDesc::Global(self.parse_leb128_u32()?),
+                _ => {
+                    return Err("Invalid import description".to_string());
+                }
+            };
+            imports.insert((module, name), desc);
+        }
+        self.ensure_section_end(skip_pos)?;
+        Ok(SectionContent::Import {
+            import_map: imports,
+            import_func_count,
+        })
     }
     fn parse_function(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
-        self.pos = skip_pos;
-        Ok(SectionContent::Function)
+        let count = self.parse_leb128_u32()?;
+        let mut types = Vec::new();
+        for _ in 0..count {
+            let ty = self.parse_leb128_u32()?;
+            types.push(ty);
+        }
+        self.ensure_section_end(skip_pos)?;
+        Ok(SectionContent::Function(types))
     }
     fn parse_table(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
@@ -296,6 +332,23 @@ impl<'a> Parser<'a> {
             0x40 => BlockType::Empty,
             _ => BlockType::ValType(byte.try_into().map_err(|_| "invalid blocktype")?),
         })
+    }
+    fn parse_resulttype(&mut self) -> Result<ResultType> {
+        let count = self.parse_leb128_u32()?;
+        let mut types = Vec::new();
+        for _ in 0..count {
+            let ty = self.parse_valtype()?;
+            types.push(ty);
+        }
+        Ok(types)
+    }
+    fn parse_funtype(&mut self) -> Result<FuncType> {
+        if self.next_byte()? != 0x60 {
+            return Err("Invalid functype".to_string());
+        }
+        let params = self.parse_resulttype()?;
+        let results = self.parse_resulttype()?;
+        Ok(FuncType { params, results })
     }
     fn parse_leb128_u32(&mut self) -> Result<u32> {
         let mut result = 0;
