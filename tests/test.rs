@@ -145,3 +145,8 @@ fn test_int_literals() {
 fn test_i32() {
     test_suite("i32.wast");
 }
+
+#[test]
+fn test_i64() {
+    test_suite("i64.wast");
+}
