@@ -305,14 +305,16 @@ impl Runtime {
                             (((a.as_i64()? as u64).wrapping_shr(b.as_i64()? as u32)) as i64).into()
                         }
                         I64Rotl => {
-                            let a = a.as_i64()?;
-                            let b = b.as_i64()?;
-                            ((a << b) | (a >> (64 - b))).into()
+                            let a = a.as_i64()? as u64;
+                            let b = b.as_i64()? as u32;
+                            let b = b % 64;
+                            (((a.wrapping_shl(b)) | (a.wrapping_shr(64 - b))) as i64).into()
                         }
                         I64Rotr => {
-                            let a = a.as_i64()?;
-                            let b = b.as_i64()?;
-                            ((a >> b) | (a << (64 - b))).into()
+                            let a = a.as_i64()? as u64;
+                            let b = b.as_i64()? as u32;
+                            let b = b % 64;
+                            (((a.wrapping_shr(b)) | (a.wrapping_shl(64 - b))) as i64).into()
                         }
                         _ => unreachable!("opcode {:?} is not a ibinop", op),
                     };
