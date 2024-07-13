@@ -132,6 +132,11 @@ fn test_suite(file_path: &str) {
 }
 
 #[test]
+fn test_type() {
+    test_suite("type.wast");
+}
+
+#[test]
 fn test_int_literals() {
     test_suite("int_literals.wast");
 }

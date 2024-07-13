@@ -8,8 +8,8 @@ use crate::wasm::{
 #[derive(Debug)]
 pub struct Runtime {
     pub stack: Vec<Value>,
-    pub codes: Vec<Func>,
-    pub func_types: Vec<TypeIdx>,
+    pub codes: Option<Vec<Func>>,
+    pub func_types: Option<Vec<TypeIdx>>,
     pub types: Vec<FuncType>,
     pub imports: Option<HashMap<(String, String), ImportDesc>>,
     pub exports: Option<HashMap<String, ExportDesc>>,
@@ -120,18 +120,13 @@ impl Runtime {
                 exports = Some(export_map);
             };
         }
-        if codes.is_none() {
-            panic!("Code section not found");
-        } else if types.is_none() {
+        if types.is_none() {
             panic!("Type section not found");
-        } else if func_types.is_none() {
-            panic!("Function section not found");
         }
-
         Runtime {
             stack: Vec::new(),
-            codes: codes.unwrap(),
-            func_types: func_types.unwrap(),
+            codes,
+            func_types,
             types: types.unwrap(),
             imports,
             exports,
@@ -147,7 +142,8 @@ impl Runtime {
             ExportDesc::Func(idx) => *idx as usize,
             _ => return Err("Export is not a function".to_string()),
         };
-        let func_type_idx = self.func_types[func_idx];
+        let func_types = self.func_types.as_ref().ok_or("Function type not found")?;
+        let func_type_idx = func_types[func_idx];
         for arg in args {
             self.stack.push(arg);
         }
@@ -162,8 +158,14 @@ impl Runtime {
     }
 
     pub fn call(&mut self, idx: usize) -> Result<(), String> {
-        let func = self.codes.get(idx).ok_or("Function not found")?;
-        let fun_type_idx = self.func_types[idx];
+        let func = self
+            .codes
+            .as_ref()
+            .unwrap()
+            .get(idx)
+            .ok_or("Function not found")?;
+        let func_types = self.func_types.as_ref().ok_or("Function type not found")?;
+        let fun_type_idx = func_types[idx];
         let fun_type = self
             .types
             .get(fun_type_idx as usize)
