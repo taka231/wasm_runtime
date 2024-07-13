@@ -286,8 +286,10 @@ impl<'a> Parser<'a> {
                     Ok(Instr::Itestop(op))
                 } else if op.is_irelop() {
                     Ok(Instr::Irelop(op))
+                } else if op.is_cutop() {
+                    Ok(Instr::Cutop(op))
                 } else {
-                    Ok(Instr::Instr(op))
+                    Err(format!("Invalid opcode: {:?}", op))
                 }
             }
         }

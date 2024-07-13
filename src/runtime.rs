@@ -371,7 +371,7 @@ impl Runtime {
                     };
                     self.stack.push(result);
                 }
-                Instr::Instr(op) => {
+                Instr::Cutop(op) => {
                     use Opcode::*;
                     match op {
                         I32Extend8S => {
@@ -394,7 +394,11 @@ impl Runtime {
                             let a = self.stack.pop().ok_or("expected value")?;
                             self.stack.push((a.as_i64()? as i32 as i64).into());
                         }
-                        _ => unimplemented!("opcode {:?} is not implemented", op),
+                        I32WrapI64 => {
+                            let a = self.stack.pop().ok_or("expected value")?;
+                            self.stack.push(((a.as_i64()? as i32) as i64).into());
+                        }
+                        _ => unreachable!("opcode {:?} is not a cutop", op),
                     }
                 }
             }

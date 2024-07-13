@@ -131,7 +131,7 @@ pub enum Instr {
     Ibinop(Opcode),
     Itestop(Opcode),
     Irelop(Opcode),
-    Instr(Opcode),
+    Cutop(Opcode),
 }
 
 #[derive(Debug)]
@@ -209,6 +209,7 @@ enum_try_from_int! {
         I64ShrU = 0x88,
         I64Rotl = 0x89,
         I64Rotr = 0x8a,
+        I32WrapI64 = 0xa7,
         I32Extend8S = 0xc0,
         I32Extend16S = 0xc1,
         I64Extend8S = 0xc2,
@@ -248,6 +249,15 @@ impl Opcode {
             I32Eq | I32Ne | I32LtS | I32LtU | I32GtS | I32GtU | I32LeS | I32LeU | I32GeS
             | I32GeU | I64Eq | I64Ne | I64LtS | I64LtU | I64GtS | I64GtU | I64LeS | I64LeU
             | I64GeS | I64GeU => true,
+            _ => false,
+        }
+    }
+    pub fn is_cutop(&self) -> bool {
+        use Opcode::*;
+        match self {
+            I32WrapI64 | I32Extend8S | I32Extend16S | I64Extend8S | I64Extend16S | I64Extend32S => {
+                true
+            }
             _ => false,
         }
     }
