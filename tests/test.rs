@@ -150,3 +150,8 @@ fn test_i32() {
 fn test_i64() {
     test_suite("i64.wast");
 }
+
+#[test]
+fn test_int_exprs() {
+    test_suite("int_exprs.wast");
+}
