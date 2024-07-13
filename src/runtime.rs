@@ -148,14 +148,14 @@ impl Runtime {
             _ => return Err("Export is not a function".to_string()),
         };
         let func_type_idx = self.func_types[func_idx];
+        for arg in args {
+            self.stack.push(arg);
+        }
         self.call(func_idx)?;
         let func_type = self
             .types
             .get(func_type_idx as usize)
             .ok_or("Type not found")?;
-        for arg in args {
-            self.stack.push(arg);
-        }
         let result_num = func_type.results.len();
         let results = self.stack.split_off(self.stack.len() - result_num);
         Ok(results)
@@ -252,42 +252,56 @@ impl Runtime {
                     let a = self.stack.pop().ok_or("expected value")?;
                     use Opcode::*;
                     let result = match op {
-                        I32Add => (a.as_i32()? + b.as_i32()?).into(),
-                        I32Sub => (a.as_i32()? - b.as_i32()?).into(),
-                        I32Mul => (a.as_i32()? * b.as_i32()?).into(),
-                        I32DivS => (a.as_i32()? / b.as_i32()?).into(),
-                        I32DivU => ((a.as_i32()? as u32 / b.as_i32()? as u32) as i32).into(),
-                        I32RemS => (a.as_i32()? % b.as_i32()?).into(),
-                        I32RemU => ((a.as_i32()? as u32 % b.as_i32()? as u32) as i32).into(),
+                        I32Add => (a.as_i32()?.wrapping_add(b.as_i32()?)).into(),
+                        I32Sub => (a.as_i32()?.wrapping_sub(b.as_i32()?)).into(),
+                        I32Mul => (a.as_i32()?.wrapping_mul(b.as_i32()?)).into(),
+                        I32DivS => (a.as_i32()?.wrapping_div(b.as_i32()?)).into(),
+                        I32DivU => {
+                            (((a.as_i32()? as u32).wrapping_div(b.as_i32()? as u32)) as i32).into()
+                        }
+                        I32RemS => (a.as_i32()?.wrapping_rem(b.as_i32()?)).into(),
+                        I32RemU => {
+                            (((a.as_i32()? as u32).wrapping_rem(b.as_i32()? as u32)) as i32).into()
+                        }
                         I32And => (a.as_i32()? & b.as_i32()?).into(),
                         I32Or => (a.as_i32()? | b.as_i32()?).into(),
                         I32Xor => (a.as_i32()? ^ b.as_i32()?).into(),
-                        I32Shl => (a.as_i32()? << b.as_i32()?).into(),
-                        I32ShrS => (a.as_i32()? >> b.as_i32()?).into(),
-                        I32ShrU => ((a.as_i32()? as u32 >> b.as_i32()? as u32) as i32).into(),
+                        I32Shl => (a.as_i32()?.wrapping_shl(b.as_i32()? as u32)).into(),
+                        I32ShrS => (a.as_i32()?.wrapping_shr(b.as_i32()? as u32)).into(),
+                        I32ShrU => {
+                            (((a.as_i32()? as u32).wrapping_shr(b.as_i32()? as u32)) as i32).into()
+                        }
                         I32Rotl => {
-                            let a = a.as_i32()?;
-                            let b = b.as_i32()?;
-                            ((a << b) | (a >> (32 - b))).into()
+                            let a = a.as_i32()? as u32;
+                            let b = b.as_i32()? as u32;
+                            let b = b % 32;
+                            (((a.wrapping_shl(b)) | (a.wrapping_shr(32 - b))) as i32).into()
                         }
                         I32Rotr => {
-                            let a = a.as_i32()?;
-                            let b = b.as_i32()?;
-                            ((a >> b) | (a << (32 - b))).into()
+                            let a = a.as_i32()? as u32;
+                            let b = b.as_i32()? as u32;
+                            let b = b % 32;
+                            (((a.wrapping_shr(b)) | (a.wrapping_shl(32 - b))) as i32).into()
                         }
-                        I64Add => (a.as_i64()? + b.as_i64()?).into(),
-                        I64Sub => (a.as_i64()? - b.as_i64()?).into(),
-                        I64Mul => (a.as_i64()? * b.as_i64()?).into(),
-                        I64DivS => (a.as_i64()? / b.as_i64()?).into(),
-                        I64DivU => ((a.as_i64()? as u64 / b.as_i64()? as u64) as i64).into(),
-                        I64RemS => (a.as_i64()? % b.as_i64()?).into(),
-                        I64RemU => ((a.as_i64()? as u64 % b.as_i64()? as u64) as i64).into(),
+                        I64Add => (a.as_i64()?.wrapping_add(b.as_i64()?)).into(),
+                        I64Sub => (a.as_i64()?.wrapping_sub(b.as_i64()?)).into(),
+                        I64Mul => (a.as_i64()?.wrapping_mul(b.as_i64()?)).into(),
+                        I64DivS => (a.as_i64()?.wrapping_div(b.as_i64()?)).into(),
+                        I64DivU => {
+                            (((a.as_i64()? as u64).wrapping_div(b.as_i64()? as u64)) as i64).into()
+                        }
+                        I64RemS => (a.as_i64()?.wrapping_rem(b.as_i64()?)).into(),
+                        I64RemU => {
+                            (((a.as_i64()? as u64).wrapping_rem(b.as_i64()? as u64)) as i64).into()
+                        }
                         I64And => (a.as_i64()? & b.as_i64()?).into(),
                         I64Or => (a.as_i64()? | b.as_i64()?).into(),
                         I64Xor => (a.as_i64()? ^ b.as_i64()?).into(),
-                        I64Shl => (a.as_i64()? << b.as_i64()?).into(),
-                        I64ShrS => (a.as_i64()? >> b.as_i64()?).into(),
-                        I64ShrU => ((a.as_i64()? as u64 >> b.as_i64()? as u64) as i64).into(),
+                        I64Shl => (a.as_i64()?.wrapping_shl(b.as_i64()? as u32)).into(),
+                        I64ShrS => (a.as_i64()?.wrapping_shr(b.as_i64()? as u32)).into(),
+                        I64ShrU => {
+                            (((a.as_i64()? as u64).wrapping_shr(b.as_i64()? as u32)) as i64).into()
+                        }
                         I64Rotl => {
                             let a = a.as_i64()?;
                             let b = b.as_i64()?;
@@ -352,6 +366,32 @@ impl Runtime {
                         _ => unreachable!("opcode {:?} is not a testop", op),
                     };
                     self.stack.push(result);
+                }
+                Instr::Instr(op) => {
+                    use Opcode::*;
+                    match op {
+                        I32Extend8S => {
+                            let a = self.stack.pop().ok_or("expected value")?;
+                            self.stack.push((a.as_i32()? as i8 as i32).into());
+                        }
+                        I32Extend16S => {
+                            let a = self.stack.pop().ok_or("expected value")?;
+                            self.stack.push((a.as_i32()? as i16 as i32).into());
+                        }
+                        I64Extend8S => {
+                            let a = self.stack.pop().ok_or("expected value")?;
+                            self.stack.push((a.as_i64()? as i8 as i64).into());
+                        }
+                        I64Extend16S => {
+                            let a = self.stack.pop().ok_or("expected value")?;
+                            self.stack.push((a.as_i64()? as i16 as i64).into());
+                        }
+                        I64Extend32S => {
+                            let a = self.stack.pop().ok_or("expected value")?;
+                            self.stack.push((a.as_i64()? as i32 as i64).into());
+                        }
+                        _ => unimplemented!("opcode {:?} is not implemented", op),
+                    }
                 }
             }
             frame.pc += 1;

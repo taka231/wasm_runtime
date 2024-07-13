@@ -287,7 +287,7 @@ impl<'a> Parser<'a> {
                 } else if op.is_irelop() {
                     Ok(Instr::Irelop(op))
                 } else {
-                    unreachable!("uncovered opcode: {:?}", op)
+                    Ok(Instr::Instr(op))
                 }
             }
         }

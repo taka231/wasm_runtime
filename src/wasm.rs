@@ -131,6 +131,7 @@ pub enum Instr {
     Ibinop(Opcode),
     Itestop(Opcode),
     Irelop(Opcode),
+    Instr(Opcode),
 }
 
 #[derive(Debug)]
@@ -208,6 +209,11 @@ enum_try_from_int! {
         I64ShrU = 0x88,
         I64Rotl = 0x89,
         I64Rotr = 0x8a,
+        I32Extend8S = 0xc0,
+        I32Extend16S = 0xc1,
+        I64Extend8S = 0xc2,
+        I64Extend16S = 0xc3,
+        I64Extend32S = 0xc4,
     }
 }
 
