@@ -90,6 +90,8 @@ impl_into_value!(&f64, Value::F64);
 #[derive(Debug, Clone)]
 pub struct Label {
     sp: usize,
+    param_num: usize,
+    return_num: usize,
     is_loop: bool,
     jump_pc: usize,
 }
@@ -193,7 +195,7 @@ impl Runtime {
             locals,
             labels: vec![],
         };
-        loop {
+        'outer: loop {
             let pc = frame.pc;
             match &frame.instrs[pc] {
                 Instr::I64Const(n) => {
@@ -211,15 +213,79 @@ impl Runtime {
                     let value = frame.locals[*n as usize].clone();
                     self.stack.push(value);
                 }
-                Instr::Loop {
-                    block_type: _,
+                Instr::Block {
+                    block_type,
                     jump_pc,
                 } => {
+                    let param_num = block_type.count_args(&self.types);
                     frame.labels.push(Label {
-                        sp: self.stack.len(),
+                        sp: self.stack.len() - param_num,
+                        param_num,
+                        return_num: block_type.count_results(&self.types),
+                        is_loop: false,
+                        jump_pc: *jump_pc,
+                    });
+                }
+                Instr::Loop {
+                    block_type,
+                    jump_pc,
+                } => {
+                    let param_num = block_type.count_args(&self.types);
+                    frame.labels.push(Label {
+                        sp: self.stack.len() - param_num,
+                        param_num,
+                        return_num: block_type.count_results(&self.types),
                         is_loop: true,
                         jump_pc: *jump_pc,
                     });
+                }
+                Instr::If {
+                    block_type,
+                    jump_pc,
+                } => {
+                    let value = self.stack.pop().ok_or("expected value")?;
+                    let param_num = block_type.count_args(&self.types);
+                    let mut jump_pc = *jump_pc;
+                    if value.as_i32()? == 0 {
+                        frame.pc = jump_pc;
+                        if let Instr::Else { jump_pc: else_pc } = &frame.instrs[jump_pc] {
+                            jump_pc = *else_pc;
+                        }
+                    }
+                    frame.labels.push(Label {
+                        sp: self.stack.len() - param_num,
+                        param_num,
+                        return_num: block_type.count_results(&self.types),
+                        is_loop: false,
+                        jump_pc,
+                    });
+                }
+                Instr::Br(n) => {
+                    let n = *n;
+                    for i in (0..=n).rev() {
+                        match frame.labels.last() {
+                            Some(Label {
+                                sp,
+                                param_num,
+                                return_num,
+                                jump_pc,
+                                is_loop,
+                            }) => {
+                                frame.pc = *jump_pc;
+                                if i != 0 {
+                                    self.trunc_and_stack_results(*sp, *return_num)?;
+                                    frame.labels.pop();
+                                } else if *is_loop {
+                                    let params =
+                                        self.stack.split_off(self.stack.len() - *param_num);
+                                    self.trunc_and_stack_results(*sp, *return_num)?;
+                                    self.stack.extend(params);
+                                }
+                            }
+                            None => break 'outer,
+                        }
+                    }
+                    continue;
                 }
                 Instr::BrIf(n) => {
                     let n = *n;
@@ -229,26 +295,53 @@ impl Runtime {
                             match frame.labels.last() {
                                 Some(Label {
                                     sp,
+                                    param_num,
+                                    return_num,
                                     jump_pc,
                                     is_loop,
                                 }) => {
-                                    self.stack.truncate(*sp);
                                     frame.pc = *jump_pc;
-                                    if !(*is_loop && i == 0) {
+                                    if i != 0 {
+                                        self.trunc_and_stack_results(*sp, *return_num)?;
                                         frame.labels.pop();
+                                    } else if *is_loop {
+                                        let params =
+                                            self.stack.split_off(self.stack.len() - *param_num);
+                                        self.trunc_and_stack_results(*sp, *return_num)?;
+                                        self.stack.extend(params);
                                     }
                                 }
-                                None => break,
+                                None => break 'outer,
                             }
                         }
+                        continue;
                     }
                 }
                 Instr::End => match frame.labels.pop() {
-                    Some(Label { sp, .. }) => {
-                        self.stack.truncate(sp);
+                    Some(Label { sp, return_num, .. }) => {
+                        self.trunc_and_stack_results(sp, return_num)?;
                     }
                     None => break,
                 },
+                Instr::Else { jump_pc } => {
+                    frame.pc = *jump_pc;
+                    match frame.labels.pop() {
+                        Some(Label { sp, return_num, .. }) => {
+                            self.trunc_and_stack_results(sp, return_num)?;
+                        }
+                        None => Err("Expected label")?,
+                    }
+                }
+                Instr::Return => break,
+                Instr::Call(n) => {
+                    let n = *n;
+                    self.frames.push(frame);
+                    self.call(n as usize)?;
+                    frame = self.frames.pop().ok_or("expected frame")?;
+                }
+                Instr::Drop => {
+                    self.stack.pop().ok_or("expected value")?;
+                }
                 Instr::Ibinop(op) => {
                     let b = self.stack.pop().ok_or("expected value")?;
                     let a = self.stack.pop().ok_or("expected value")?;
@@ -396,7 +489,15 @@ impl Runtime {
                         }
                         I32WrapI64 => {
                             let a = self.stack.pop().ok_or("expected value")?;
-                            self.stack.push(((a.as_i64()? as i32) as i64).into());
+                            self.stack.push((a.as_i64()? as i32).into());
+                        }
+                        I64ExtendI32S => {
+                            let a = self.stack.pop().ok_or("expected value")?;
+                            self.stack.push((a.as_i32()? as i64).into());
+                        }
+                        I64ExtendI32U => {
+                            let a = self.stack.pop().ok_or("expected value")?;
+                            self.stack.push((a.as_i32()? as u32 as i64).into());
                         }
                         _ => unreachable!("opcode {:?} is not a cutop", op),
                     }
@@ -404,12 +505,14 @@ impl Runtime {
             }
             frame.pc += 1;
         }
-        let result_num = frame.return_num;
+        self.trunc_and_stack_results(frame.sp, frame.return_num)
+    }
+    fn trunc_and_stack_results(&mut self, sp: usize, result_num: usize) -> Result<(), String> {
         let mut pop_vec = Vec::new();
         for _ in 0..result_num {
             pop_vec.push(self.stack.pop().ok_or("expected value")?);
         }
-        self.stack.truncate(frame.sp);
+        self.stack.truncate(sp);
         while let Some(value) = pop_vec.pop() {
             self.stack.push(value);
         }

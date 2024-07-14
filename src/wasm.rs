@@ -105,6 +105,24 @@ pub struct Func {
 pub enum BlockType {
     Empty,
     ValType(ValType),
+    TypeIdx(TypeIdx),
+}
+
+impl BlockType {
+    pub fn count_args(&self, types: &Vec<FuncType>) -> usize {
+        match self {
+            BlockType::Empty => 0,
+            BlockType::ValType(_) => 0,
+            BlockType::TypeIdx(type_idx) => types[*type_idx as usize].params.len(),
+        }
+    }
+    pub fn count_results(&self, types: &Vec<FuncType>) -> usize {
+        match self {
+            BlockType::Empty => 0,
+            BlockType::ValType(_) => 1,
+            BlockType::TypeIdx(type_idx) => types[*type_idx as usize].results.len(),
+        }
+    }
 }
 
 pub type ResultType = Vec<ValType>;
@@ -117,11 +135,26 @@ pub struct FuncType {
 
 #[derive(Debug, Clone)]
 pub enum Instr {
+    Block {
+        block_type: BlockType,
+        jump_pc: usize,
+    },
     Loop {
         block_type: BlockType,
         jump_pc: usize,
     },
+    If {
+        block_type: BlockType,
+        jump_pc: usize,
+    },
+    Else {
+        jump_pc: usize,
+    },
     End,
+    Return,
+    Call(u32),
+    Drop,
+    Br(u32),
     BrIf(u32),
     LocalGet(u32),
     LocalSet(u32),
@@ -144,9 +177,16 @@ enum_try_from_int! {
     #[repr(u8)]
     #[derive(Debug, Clone, PartialEq)]
     pub enum Opcode {
+        Block = 0x02,
         Loop = 0x03,
+        If = 0x04,
+        Else = 0x05,
         End = 0x0b,
+        Br = 0x0c,
         BrIf = 0x0d,
+        Return = 0x0f,
+        Call = 0x10,
+        Drop = 0x1a,
         LocalGet = 0x20,
         LocalSet = 0x21,
         I32Const = 0x41,
@@ -209,6 +249,8 @@ enum_try_from_int! {
         I64ShrU = 0x88,
         I64Rotl = 0x89,
         I64Rotr = 0x8a,
+        I64ExtendI32S = 0xac,
+        I64ExtendI32U = 0xad,
         I32WrapI64 = 0xa7,
         I32Extend8S = 0xc0,
         I32Extend16S = 0xc1,
@@ -255,9 +297,8 @@ impl Opcode {
     pub fn is_cutop(&self) -> bool {
         use Opcode::*;
         match self {
-            I32WrapI64 | I32Extend8S | I32Extend16S | I64Extend8S | I64Extend16S | I64Extend32S => {
-                true
-            }
+            I32WrapI64 | I32Extend8S | I32Extend16S | I64Extend8S | I64Extend16S | I64Extend32S
+            | I64ExtendI32S | I64ExtendI32U => true,
             _ => false,
         }
     }

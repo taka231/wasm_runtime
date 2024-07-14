@@ -198,33 +198,77 @@ impl<'a> Parser<'a> {
             // label for function
             self.label_stack.push(None);
             while self.pos < current_pos + func_size as usize {
-                if let Ok(instr) = self.parse_instr() {
-                    let instr = match instr {
+                let instr = self.parse_instr()?;
+                let instr = match instr {
+                    Instr::Block { .. } => {
+                        self.label_stack.push(Some(instrs.len()));
+                        instr
+                    }
+                    Instr::Loop {
+                        block_type,
+                        jump_pc: _,
+                    } => {
+                        self.label_stack.push(None);
                         Instr::Loop {
                             block_type,
-                            jump_pc: _,
-                        } => {
-                            self.label_stack.push(None);
-                            Instr::Loop {
-                                block_type,
-                                // pc of loop instruction
-                                jump_pc: instrs.len(),
-                            }
+                            // (pc of loop instruction) + 1
+                            jump_pc: instrs.len() + 1,
                         }
-                        Instr::End => {
-                            match self.label_stack.pop() {
-                                Some(Some(_)) => unimplemented!(),
-                                Some(None) => {}
-                                None => {
+                    }
+                    Instr::If { .. } => {
+                        self.label_stack.push(Some(instrs.len()));
+                        instr
+                    }
+                    Instr::Else { .. } => {
+                        if let Some(Some(pc)) = self.label_stack.pop() {
+                            if let Instr::If { block_type, .. } = &instrs[pc] {
+                                instrs[pc] = Instr::If {
+                                    block_type: block_type.clone(),
+                                    jump_pc: instrs.len(),
+                                };
+                                self.label_stack.push(Some(instrs.len()));
+                                instr
+                            } else {
+                                return Err("unexpected else".to_string());
+                            }
+                        } else {
+                            return Err("unexpected else".to_string());
+                        }
+                    }
+                    Instr::End => {
+                        match self.label_stack.pop() {
+                            Some(Some(pc)) => match &instrs[pc] {
+                                Instr::If { block_type, .. } => {
+                                    instrs[pc] = Instr::If {
+                                        block_type: block_type.clone(),
+                                        jump_pc: instrs.len(),
+                                    };
+                                }
+                                Instr::Else { .. } => {
+                                    instrs[pc] = Instr::Else {
+                                        jump_pc: instrs.len(),
+                                    };
+                                }
+                                Instr::Block { block_type, .. } => {
+                                    instrs[pc] = Instr::Block {
+                                        block_type: block_type.clone(),
+                                        jump_pc: instrs.len(),
+                                    };
+                                }
+                                _ => {
                                     return Err("unexpected end".to_string());
                                 }
-                            };
-                            Instr::End
-                        }
-                        _ => instr,
-                    };
-                    instrs.push(instr);
-                }
+                            },
+                            Some(None) => {}
+                            None => {
+                                return Err("unexpected end".to_string());
+                            }
+                        };
+                        Instr::End
+                    }
+                    _ => instr,
+                };
+                instrs.push(instr);
             }
             if self.pos != current_pos + func_size as usize {
                 return Err("Invalid function size".to_string());
@@ -244,9 +288,10 @@ impl<'a> Parser<'a> {
     fn parse_instr(&mut self) -> Result<Instr> {
         let opcode = self
             .next_byte()
-            .map_err(|err| format!("{err}: expected opcode"))?
+            .map_err(|err| format!("{err}: expected opcode"))?;
+        let opcode: Opcode = opcode
             .try_into()
-            .map_err(|_| format!("invalid opcode"))?;
+            .map_err(|_| format!("invalid opcode: 0x{:X}", opcode))?;
         match opcode {
             Opcode::I64Const => {
                 let value = self.parse_leb128_i64()?;
@@ -264,9 +309,27 @@ impl<'a> Parser<'a> {
                 let localidx = self.parse_leb128_u32()?;
                 Ok(Instr::LocalSet(localidx))
             }
+            Opcode::Br => {
+                let labelidx = self.parse_leb128_u32()?;
+                Ok(Instr::Br(labelidx))
+            }
             Opcode::BrIf => {
                 let labelidx = self.parse_leb128_u32()?;
                 Ok(Instr::BrIf(labelidx))
+            }
+            Opcode::Return => Ok(Instr::Return),
+            Opcode::Call => {
+                let funcidx = self.parse_leb128_u32()?;
+                Ok(Instr::Call(funcidx))
+            }
+            Opcode::Drop => Ok(Instr::Drop),
+            Opcode::Block => {
+                let block_type = self.parse_blocktype()?;
+                Ok(Instr::Block {
+                    block_type,
+                    // dummy value
+                    jump_pc: 0,
+                })
             }
             Opcode::Loop => {
                 let block_type = self.parse_blocktype()?;
@@ -276,6 +339,18 @@ impl<'a> Parser<'a> {
                     jump_pc: 0,
                 })
             }
+            Opcode::If => {
+                let block_type = self.parse_blocktype()?;
+                Ok(Instr::If {
+                    block_type,
+                    // dummy value
+                    jump_pc: 0,
+                })
+            }
+            Opcode::Else => Ok(Instr::Else {
+                // dummy value
+                jump_pc: 0,
+            }),
             Opcode::End => Ok(Instr::End),
             op => {
                 if op.is_iunop() {
@@ -327,13 +402,22 @@ impl<'a> Parser<'a> {
             .map_err(|_| format!("invalid valtype"))
     }
     fn parse_blocktype(&mut self) -> Result<BlockType> {
-        let byte = self
-            .next_byte()
-            .map_err(|err| format!("{err}: expected blocktype"))?;
-        Ok(match byte {
-            0x40 => BlockType::Empty,
-            _ => BlockType::ValType(byte.try_into().map_err(|_| "invalid blocktype")?),
-        })
+        if self.bytes[self.pos] == 0x40 {
+            self.pos += 1;
+            return Ok(BlockType::Empty);
+        }
+        let block_type = self.parse_leb128_i64()?;
+        if block_type < 0 {
+            let byte = block_type as u8 & 0x7f;
+            Ok(BlockType::ValType(
+                byte.try_into().map_err(|_| "invalid blocktype")?,
+            ))
+        } else {
+            if block_type > std::u32::MAX as i64 {
+                return Err("too big typeidx blocktype".to_string());
+            }
+            Ok(BlockType::TypeIdx(block_type as u32))
+        }
     }
     fn parse_resulttype(&mut self) -> Result<ResultType> {
         let count = self.parse_leb128_u32()?;
@@ -375,7 +459,7 @@ impl<'a> Parser<'a> {
         loop {
             let byte = self
                 .next_byte()
-                .map_err(|err| format!("{err}: while parsing u32"))?;
+                .map_err(|err| format!("{err}: while parsing i64"))?;
             if shift >= 71 {
                 return Err("Invalid LEB128 encoding".to_string());
             }
@@ -396,7 +480,7 @@ impl<'a> Parser<'a> {
         loop {
             let byte = self
                 .next_byte()
-                .map_err(|err| format!("{err}: while parsing u32"))?;
+                .map_err(|err| format!("{err}: while parsing i32"))?;
             if shift >= 39 {
                 return Err("Invalid LEB128 encoding".to_string());
             }
