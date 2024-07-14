@@ -413,6 +413,87 @@ impl Runtime {
                     };
                     self.stack.push(result);
                 }
+                Instr::Funop(op) => {
+                    let a = self.stack.pop().ok_or("expected value")?;
+                    use Opcode::*;
+                    let result = match op {
+                        F32Abs => a.as_f32()?.abs().into(),
+                        F32Neg => (-a.as_f32()?).into(),
+                        F32Ceil => a.as_f32()?.ceil().into(),
+                        F32Floor => a.as_f32()?.floor().into(),
+                        F32Trunc => a.as_f32()?.trunc().into(),
+                        F32Nearest => a.as_f32()?.round_ties_even().into(),
+                        F32Sqrt => a.as_f32()?.sqrt().into(),
+                        F64Abs => a.as_f64()?.abs().into(),
+                        F64Neg => (-a.as_f64()?).into(),
+                        F64Ceil => a.as_f64()?.ceil().into(),
+                        F64Floor => a.as_f64()?.floor().into(),
+                        F64Trunc => a.as_f64()?.trunc().into(),
+                        F64Nearest => a.as_f64()?.round_ties_even().into(),
+                        F64Sqrt => a.as_f64()?.sqrt().into(),
+                        _ => unreachable!("opcode {:?} is not a funop", op),
+                    };
+                    self.stack.push(result);
+                }
+                Instr::Fbinop(op) => {
+                    let b = self.stack.pop().ok_or("expected value")?;
+                    let a = self.stack.pop().ok_or("expected value")?;
+                    use Opcode::*;
+                    let result = match op {
+                        F32Add => (a.as_f32()? + b.as_f32()?).into(),
+                        F32Sub => (a.as_f32()? - b.as_f32()?).into(),
+                        F32Mul => (a.as_f32()? * b.as_f32()?).into(),
+                        F32Div => (a.as_f32()? / b.as_f32()?).into(),
+                        F32Min => {
+                            let a = a.as_f32()?;
+                            let b = b.as_f32()?;
+                            if a.is_nan() || b.is_nan() {
+                                f32::NAN
+                            } else {
+                                a.min(b)
+                            }
+                            .into()
+                        }
+                        F32Max => {
+                            let a = a.as_f32()?;
+                            let b = b.as_f32()?;
+                            if a.is_nan() || b.is_nan() {
+                                f32::NAN
+                            } else {
+                                a.max(b)
+                            }
+                            .into()
+                        }
+                        F32Copysign => a.as_f32()?.copysign(b.as_f32()?).into(),
+                        F64Add => (a.as_f64()? + b.as_f64()?).into(),
+                        F64Sub => (a.as_f64()? - b.as_f64()?).into(),
+                        F64Mul => (a.as_f64()? * b.as_f64()?).into(),
+                        F64Div => (a.as_f64()? / b.as_f64()?).into(),
+                        F64Min => {
+                            let a = a.as_f64()?;
+                            let b = b.as_f64()?;
+                            if a.is_nan() || b.is_nan() {
+                                f64::NAN
+                            } else {
+                                a.min(b)
+                            }
+                            .into()
+                        }
+                        F64Max => {
+                            let a = a.as_f64()?;
+                            let b = b.as_f64()?;
+                            if a.is_nan() || b.is_nan() {
+                                f64::NAN
+                            } else {
+                                a.max(b)
+                            }
+                            .into()
+                        }
+                        F64Copysign => a.as_f64()?.copysign(b.as_f64()?).into(),
+                        _ => unreachable!("opcode {:?} is not a fbinop", op),
+                    };
+                    self.stack.push(result);
+                }
                 Instr::Irelop(op) => {
                     let b = self.stack.pop().ok_or("expected value")?;
                     let a = self.stack.pop().ok_or("expected value")?;

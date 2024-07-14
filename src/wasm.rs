@@ -161,7 +161,9 @@ pub enum Instr {
     I32Const(i32),
     I64Const(i64),
     Iunop(Opcode),
+    Funop(Opcode),
     Ibinop(Opcode),
+    Fbinop(Opcode),
     Itestop(Opcode),
     Irelop(Opcode),
     Cutop(Opcode),
@@ -249,9 +251,37 @@ enum_try_from_int! {
         I64ShrU = 0x88,
         I64Rotl = 0x89,
         I64Rotr = 0x8a,
+        F32Abs = 0x8b,
+        F32Neg = 0x8c,
+        F32Ceil = 0x8d,
+        F32Floor = 0x8e,
+        F32Trunc = 0x8f,
+        F32Nearest = 0x90,
+        F32Sqrt = 0x91,
+        F32Add = 0x92,
+        F32Sub = 0x93,
+        F32Mul = 0x94,
+        F32Div = 0x95,
+        F32Min = 0x96,
+        F32Max = 0x97,
+        F32Copysign = 0x98,
+        F64Abs = 0x99,
+        F64Neg = 0x9a,
+        F64Ceil = 0x9b,
+        F64Floor = 0x9c,
+        F64Trunc = 0x9d,
+        F64Nearest = 0x9e,
+        F64Sqrt = 0x9f,
+        F64Add = 0xa0,
+        F64Sub = 0xa1,
+        F64Mul = 0xa2,
+        F64Div = 0xa3,
+        F64Min = 0xa4,
+        F64Max = 0xa5,
+        F64Copysign = 0xa6,
+        I32WrapI64 = 0xa7,
         I64ExtendI32S = 0xac,
         I64ExtendI32U = 0xad,
-        I32WrapI64 = 0xa7,
         I32Extend8S = 0xc0,
         I32Extend16S = 0xc1,
         I64Extend8S = 0xc2,
@@ -265,6 +295,22 @@ impl Opcode {
         use Opcode::*;
         match self {
             I32Clz | I32Ctz | I32Popcnt | I64Clz | I64Ctz | I64Popcnt => true,
+            _ => false,
+        }
+    }
+    pub fn is_funop(&self) -> bool {
+        use Opcode::*;
+        match self {
+            F32Abs | F32Neg | F32Ceil | F32Floor | F32Trunc | F32Nearest | F32Sqrt | F64Abs
+            | F64Neg | F64Ceil | F64Floor | F64Trunc | F64Nearest | F64Sqrt => true,
+            _ => false,
+        }
+    }
+    pub fn is_fbinop(&self) -> bool {
+        use Opcode::*;
+        match self {
+            F32Add | F32Sub | F32Mul | F32Div | F32Min | F32Max | F32Copysign | F64Add | F64Sub
+            | F64Mul | F64Div | F64Min | F64Max | F64Copysign => true,
             _ => false,
         }
     }

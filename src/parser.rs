@@ -363,6 +363,10 @@ impl<'a> Parser<'a> {
                     Ok(Instr::Irelop(op))
                 } else if op.is_cutop() {
                     Ok(Instr::Cutop(op))
+                } else if op.is_funop() {
+                    Ok(Instr::Funop(op))
+                } else if op.is_fbinop() {
+                    Ok(Instr::Fbinop(op))
                 } else {
                     Err(format!("Invalid opcode: {:?}", op))
                 }
