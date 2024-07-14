@@ -106,8 +106,12 @@ fn test_suite(file_path: &str) {
                                 Val::I64 { value } => {
                                     Value::I64(value.unwrap().parse::<u64>().unwrap() as i64)
                                 }
-                                Val::F32 { value } => Value::F32(value.unwrap().parse().unwrap()),
-                                Val::F64 { value } => Value::F64(value.unwrap().parse().unwrap()),
+                                Val::F32 { value } => Value::F32(f32::from_bits(
+                                    value.unwrap().parse::<u32>().unwrap(),
+                                )),
+                                Val::F64 { value } => Value::F64(f64::from_bits(
+                                    value.unwrap().parse::<u64>().unwrap(),
+                                )),
                             })
                             .collect();
                         runtime.as_mut().unwrap().call_with_name(&field, args)
@@ -165,4 +169,9 @@ fn test_int_exprs() {
 #[test]
 fn test_fac() {
     test_suite("fac.wast");
+}
+
+#[test]
+fn test_f32() {
+    test_suite("f32.wast");
 }
