@@ -106,18 +106,32 @@ fn test_suite(file_path: &str) {
                                 Val::I64 { value } => {
                                     Value::I64(value.unwrap().parse::<u64>().unwrap() as i64)
                                 }
-                                Val::F32 { value } => Value::F32(f32::from_bits(
-                                    value.unwrap().parse::<u32>().unwrap(),
-                                )),
-                                Val::F64 { value } => Value::F64(f64::from_bits(
-                                    value.unwrap().parse::<u64>().unwrap(),
-                                )),
+                                Val::F32 { value } => {
+                                    let value = value.unwrap();
+                                    if value == "nan:canonical" {
+                                        Value::F32(f32::NAN)
+                                    } else if value == "nan:arithmetic" {
+                                        Value::F32(f32::NAN)
+                                    } else {
+                                        Value::F32(f32::from_bits(value.parse::<u32>().unwrap()))
+                                    }
+                                }
+                                Val::F64 { value } => {
+                                    let value = value.unwrap();
+                                    if value == "nan:canonical" {
+                                        Value::F64(f64::NAN)
+                                    } else if value == "nan:arithmetic" {
+                                        Value::F64(f64::NAN)
+                                    } else {
+                                        Value::F64(f64::from_bits(value.parse::<u64>().unwrap()))
+                                    }
+                                }
                             })
                             .collect();
                         runtime.as_mut().unwrap().call_with_name(&field, args)
                     }
                 };
-                let expected = Ok(expected
+                let expected: Result<Vec<Value>, String> = Ok(expected
                     .into_iter()
                     .map(|val| match val {
                         Val::I32 { value } => {
@@ -126,11 +140,42 @@ fn test_suite(file_path: &str) {
                         Val::I64 { value } => {
                             Value::I64(value.unwrap().parse::<u64>().unwrap() as i64)
                         }
-                        Val::F32 { value } => Value::F32(value.unwrap().parse().unwrap()),
-                        Val::F64 { value } => Value::F64(value.unwrap().parse().unwrap()),
+                        Val::F32 { value } => {
+                            let value = value.unwrap();
+                            if value == "nan:canonical" {
+                                Value::F32(f32::NAN)
+                            } else if value == "nan:arithmetic" {
+                                Value::F32(f32::NAN)
+                            } else {
+                                Value::F32(f32::from_bits(value.parse::<u32>().unwrap()))
+                            }
+                        }
+
+                        Val::F64 { value } => {
+                            let value = value.unwrap();
+                            if value == "nan:canonical" {
+                                Value::F64(f64::NAN)
+                            } else if value == "nan:arithmetic" {
+                                Value::F64(f64::NAN)
+                            } else {
+                                Value::F64(f64::from_bits(value.parse::<u64>().unwrap()))
+                            }
+                        }
                     })
                     .collect());
-                assert_eq!(action, expected);
+                for (action, expected) in action.unwrap().iter().zip(expected.unwrap()) {
+                    match action {
+                        Value::F32(value) if value.is_nan() => {
+                            assert!(matches!(expected, Value::F32(value) if value.is_nan()));
+                        }
+                        Value::F64(value) if value.is_nan() => {
+                            assert!(matches!(expected, Value::F64(value) if value.is_nan()));
+                        }
+                        _ => {
+                            assert_eq!(action, &expected);
+                        }
+                    }
+                }
             }
             // todo
             Test::AssertTrap { .. } => {}
