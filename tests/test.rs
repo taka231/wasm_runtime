@@ -44,6 +44,11 @@ enum Test {
         text: String,
         module_type: String,
     },
+    AssertExhaustion {
+        line: u32,
+        action: Action,
+        text: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -127,6 +132,7 @@ fn test_suite(file_path: &str) {
             Test::AssertTrap { .. } => {}
             Test::AssertInvalid { .. } => {}
             Test::AssertMalformed { .. } => {}
+            Test::AssertExhaustion { .. } => {}
         }
     }
 }
@@ -154,4 +160,9 @@ fn test_i64() {
 #[test]
 fn test_int_exprs() {
     test_suite("int_exprs.wast");
+}
+
+#[test]
+fn test_fac() {
+    test_suite("fac.wast");
 }
