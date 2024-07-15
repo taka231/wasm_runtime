@@ -192,6 +192,11 @@ fn test_type() {
 }
 
 #[test]
+fn test_inline_module() {
+    test_suite("inline-module.wast");
+}
+
+#[test]
 fn test_int_literals() {
     test_suite("int_literals.wast");
 }
