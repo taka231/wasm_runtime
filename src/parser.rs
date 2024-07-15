@@ -292,7 +292,7 @@ impl<'a> Parser<'a> {
         let opcode: Opcode = opcode
             .try_into()
             .map_err(|_| format!("invalid opcode: 0x{:X}", opcode))?;
-        match opcode {
+        match dbg!(opcode) {
             Opcode::I64Const => {
                 let value = self.parse_leb128_i64()?;
                 Ok(Instr::I64Const(value))
@@ -300,6 +300,26 @@ impl<'a> Parser<'a> {
             Opcode::I32Const => {
                 let value = self.parse_leb128_i32()?;
                 Ok(Instr::I32Const(value as i32))
+            }
+            Opcode::F32Const => {
+                let bytes = self
+                    .bytes
+                    .get(self.pos..self.pos + 4)
+                    .ok_or("expected bytes")?;
+                self.pos += 4;
+                let f32 = f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                Ok(Instr::F32Const(f32))
+            }
+            Opcode::F64Const => {
+                let bytes = self
+                    .bytes
+                    .get(self.pos..self.pos + 8)
+                    .ok_or("expected bytes")?;
+                self.pos += 8;
+                let f64 = f64::from_le_bytes([
+                    bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                ]);
+                Ok(Instr::F64Const(f64))
             }
             Opcode::LocalGet => {
                 let localidx = self.parse_leb128_u32()?;

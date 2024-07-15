@@ -204,6 +204,12 @@ impl Runtime {
                 Instr::I32Const(n) => {
                     self.stack.push(n.into());
                 }
+                Instr::F32Const(f) => {
+                    self.stack.push(f.into());
+                }
+                Instr::F64Const(f) => {
+                    self.stack.push(f.into());
+                }
                 Instr::LocalSet(n) => {
                     let n = *n;
                     let value = self.stack.pop().ok_or("expected value")?;
