@@ -292,7 +292,7 @@ impl<'a> Parser<'a> {
         let opcode: Opcode = opcode
             .try_into()
             .map_err(|_| format!("invalid opcode: 0x{:X}", opcode))?;
-        match dbg!(opcode) {
+        match opcode {
             Opcode::I64Const => {
                 let value = self.parse_leb128_i64()?;
                 Ok(Instr::I64Const(value))

@@ -241,3 +241,8 @@ fn test_forward() {
 fn test_const() {
     test_suite("const.wast");
 }
+
+#[test]
+fn test_conversions() {
+    test_suite("conversions.wast");
+}
