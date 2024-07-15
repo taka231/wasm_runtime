@@ -246,3 +246,8 @@ fn test_const() {
 fn test_conversions() {
     test_suite("conversions.wast");
 }
+
+#[test]
+fn test_local_get() {
+    test_suite("local_get.wast");
+}
