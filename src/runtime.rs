@@ -216,7 +216,7 @@ impl Runtime {
             locals,
             labels: vec![],
         };
-        'outer: loop {
+        loop {
             let pc = frame.pc;
             match &frame.instrs[pc] {
                 Instr::I64Const(n) => {
@@ -288,61 +288,36 @@ impl Runtime {
                     });
                 }
                 Instr::Br(n) => {
-                    let n = *n;
-                    for i in (0..=n).rev() {
-                        match frame.labels.last() {
-                            Some(Label {
-                                sp,
-                                param_num,
-                                return_num,
-                                jump_pc,
-                                is_loop,
-                            }) => {
-                                frame.pc = *jump_pc;
-                                if i != 0 {
-                                    self.trunc_and_stack_results(*sp, *return_num)?;
-                                    frame.labels.pop();
-                                } else if *is_loop {
-                                    let params =
-                                        self.stack.split_off(self.stack.len() - *param_num);
-                                    self.trunc_and_stack_results(*sp, *return_num)?;
-                                    self.stack.extend(params);
-                                }
-                            }
-                            None => break 'outer,
-                        }
+                    let n = *n as usize;
+                    let is_func_end = self.pop_labels(&mut frame, n)?;
+                    if is_func_end {
+                        break;
                     }
                     continue;
                 }
                 Instr::BrIf(n) => {
-                    let n = *n;
+                    let n = *n as usize;
                     let value = self.stack.pop().ok_or("expected value")?;
                     if value.as_i32()? != 0 {
-                        for i in (0..=n).rev() {
-                            match frame.labels.last() {
-                                Some(Label {
-                                    sp,
-                                    param_num,
-                                    return_num,
-                                    jump_pc,
-                                    is_loop,
-                                }) => {
-                                    frame.pc = *jump_pc;
-                                    if i != 0 {
-                                        self.trunc_and_stack_results(*sp, *return_num)?;
-                                        frame.labels.pop();
-                                    } else if *is_loop {
-                                        let params =
-                                            self.stack.split_off(self.stack.len() - *param_num);
-                                        self.trunc_and_stack_results(*sp, *return_num)?;
-                                        self.stack.extend(params);
-                                    }
-                                }
-                                None => break 'outer,
-                            }
+                        let is_func_end = self.pop_labels(&mut frame, n)?;
+                        if is_func_end {
+                            break;
                         }
                         continue;
                     }
+                }
+                Instr::BrTable(labels, default) => {
+                    let n = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                    let n = if n < labels.len() {
+                        labels[n]
+                    } else {
+                        *default
+                    } as usize;
+                    let is_func_end = self.pop_labels(&mut frame, n)?;
+                    if is_func_end {
+                        break;
+                    }
+                    continue;
                 }
                 Instr::End => match frame.labels.pop() {
                     Some(Label { sp, return_num, .. }) => {
@@ -663,5 +638,30 @@ impl Runtime {
             self.stack.push(value);
         }
         Ok(())
+    }
+    fn pop_labels(&mut self, frame: &mut Frame, count: usize) -> Result<bool, String> {
+        for i in (0..=count).rev() {
+            match frame.labels.last() {
+                Some(Label {
+                    sp,
+                    param_num,
+                    return_num,
+                    jump_pc,
+                    is_loop,
+                }) => {
+                    frame.pc = *jump_pc;
+                    if i != 0 {
+                        self.trunc_and_stack_results(*sp, *return_num)?;
+                        frame.labels.pop();
+                    } else if *is_loop {
+                        let params = self.stack.split_off(self.stack.len() - *param_num);
+                        self.trunc_and_stack_results(*sp, *return_num)?;
+                        self.stack.extend(params);
+                    }
+                }
+                None => return Ok(true),
+            }
+        }
+        Ok(false)
     }
 }

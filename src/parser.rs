@@ -337,6 +337,16 @@ impl<'a> Parser<'a> {
                 let labelidx = self.parse_leb128_u32()?;
                 Ok(Instr::BrIf(labelidx))
             }
+            Opcode::BrTable => {
+                let num = self.parse_leb128_u32()?;
+                let mut labels = Vec::new();
+                for _ in 0..num {
+                    let labelidx = self.parse_leb128_u32()?;
+                    labels.push(labelidx);
+                }
+                let labelidx = self.parse_leb128_u32()?;
+                Ok(Instr::BrTable(labels, labelidx))
+            }
             Opcode::Return => Ok(Instr::Return),
             Opcode::Call => {
                 let funcidx = self.parse_leb128_u32()?;
