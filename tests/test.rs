@@ -236,3 +236,8 @@ fn test_f64() {
 fn test_forward() {
     test_suite("forward.wast");
 }
+
+#[test]
+fn test_const() {
+    test_suite("const.wast");
+}
