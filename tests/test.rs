@@ -256,3 +256,8 @@ fn test_local_get() {
 fn test_local_set() {
     test_suite("local_set.wast");
 }
+
+#[test]
+fn test_labels() {
+    test_suite("labels.wast");
+}
