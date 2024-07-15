@@ -108,6 +108,7 @@ fn test_suite(file_path: &str) {
                                 }
                                 Val::F32 { value } => {
                                     let value = value.unwrap();
+                                    // todo: distinct canonical and arithmetic nan
                                     if value == "nan:canonical" {
                                         Value::F32(f32::NAN)
                                     } else if value == "nan:arithmetic" {
