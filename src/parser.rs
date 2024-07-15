@@ -372,6 +372,11 @@ impl<'a> Parser<'a> {
                 jump_pc: 0,
             }),
             Opcode::End => Ok(Instr::End),
+            Opcode::TruncSat => {
+                let num = self.parse_leb128_u32()?;
+                let trunc_sat_op = (num as u8).try_into().map_err(|_| "invalid trunc_sat_op")?;
+                Ok(Instr::TruncSat(trunc_sat_op))
+            }
             op => {
                 if op.is_iunop() {
                     Ok(Instr::Iunop(op))

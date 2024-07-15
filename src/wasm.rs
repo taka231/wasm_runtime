@@ -169,6 +169,22 @@ pub enum Instr {
     Itestop(Opcode),
     Irelop(Opcode),
     Cutop(Opcode),
+    TruncSat(TruncSatOp),
+}
+
+enum_try_from_int! {
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy)]
+    pub enum TruncSatOp {
+        I32TruncSatF32S = 0x00,
+        I32TruncSatF32U = 0x01,
+        I32TruncSatF64S = 0x02,
+        I32TruncSatF64U = 0x03,
+        I64TruncSatF32S = 0x04,
+        I64TruncSatF32U = 0x05,
+        I64TruncSatF64S = 0x06,
+        I64TruncSatF64U = 0x07,
+    }
 }
 
 #[derive(Debug)]
@@ -284,13 +300,36 @@ enum_try_from_int! {
         F64Max = 0xa5,
         F64Copysign = 0xa6,
         I32WrapI64 = 0xa7,
+        I32TruncF32S = 0xa8,
+        I32TruncF32U = 0xa9,
+        I32TruncF64S = 0xaa,
+        I32TruncF64U = 0xab,
         I64ExtendI32S = 0xac,
         I64ExtendI32U = 0xad,
+        I64TruncF32S = 0xae,
+        I64TruncF32U = 0xaf,
+        I64TruncF64S = 0xb0,
+        I64TruncF64U = 0xb1,
+        F32ConvertI32S = 0xb2,
+        F32ConvertI32U = 0xb3,
+        F32ConvertI64S = 0xb4,
+        F32ConvertI64U = 0xb5,
+        F32DemoteF64 = 0xb6,
+        F64ConvertI32S = 0xb7,
+        F64ConvertI32U = 0xb8,
+        F64ConvertI64S = 0xb9,
+        F64ConvertI64U = 0xba,
+        F64PromoteF32 = 0xbb,
+        I32ReinterpretF32 = 0xbc,
+        I64ReinterpretF64 = 0xbd,
+        F32ReinterpretI32 = 0xbe,
+        F64ReinterpretI64 = 0xbf,
         I32Extend8S = 0xc0,
         I32Extend16S = 0xc1,
         I64Extend8S = 0xc2,
         I64Extend16S = 0xc3,
         I64Extend32S = 0xc4,
+        TruncSat = 0xfc,
     }
 }
 
@@ -347,8 +386,13 @@ impl Opcode {
     pub fn is_cutop(&self) -> bool {
         use Opcode::*;
         match self {
-            I32WrapI64 | I32Extend8S | I32Extend16S | I64Extend8S | I64Extend16S | I64Extend32S
-            | I64ExtendI32S | I64ExtendI32U => true,
+            I32WrapI64 | I32TruncF32S | I32TruncF32U | I32TruncF64S | I32TruncF64U
+            | I64ExtendI32S | I64ExtendI32U | I64TruncF32S | I64TruncF32U | I64TruncF64S
+            | I64TruncF64U | F32ConvertI32S | F32ConvertI32U | F32ConvertI64S | F32ConvertI64U
+            | F32DemoteF64 | F64ConvertI32S | F64ConvertI32U | F64ConvertI64S | F64ConvertI64U
+            | F64PromoteF32 | I32ReinterpretF32 | I64ReinterpretF64 | F32ReinterpretI32
+            | F64ReinterpretI64 | I32Extend8S | I32Extend16S | I64Extend8S | I64Extend16S
+            | I64Extend32S => true,
             _ => false,
         }
     }

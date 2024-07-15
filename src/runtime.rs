@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::wasm::{
     ExportDesc, Func, FuncType, ImportDesc, Instr, Locals, Opcode, Section, SectionContent,
-    TypeIdx, ValType,
+    TruncSatOp, TypeIdx, ValType,
 };
 
 #[derive(Debug)]
@@ -58,6 +58,27 @@ impl Value {
         match self {
             Value::F64(x) => Ok(*x),
             _ => Err("Expected f64".to_string()),
+        }
+    }
+    fn is_nan(&self) -> bool {
+        match self {
+            Value::F32(x) => x.is_nan(),
+            Value::F64(x) => x.is_nan(),
+            _ => false,
+        }
+    }
+    fn is_pos_inf(&self) -> bool {
+        match self {
+            Value::F32(x) => x.is_infinite() && x.is_sign_positive(),
+            Value::F64(x) => x.is_infinite() && x.is_sign_positive(),
+            _ => false,
+        }
+    }
+    fn is_neg_inf(&self) -> bool {
+        match self {
+            Value::F32(x) => x.is_infinite() && x.is_sign_negative(),
+            Value::F64(x) => x.is_infinite() && x.is_sign_negative(),
+            _ => false,
         }
     }
 }
@@ -552,42 +573,80 @@ impl Runtime {
                     self.stack.push(result);
                 }
                 Instr::Cutop(op) => {
+                    let a = self.stack.pop().ok_or("expected value")?;
                     use Opcode::*;
-                    match op {
-                        I32Extend8S => {
-                            let a = self.stack.pop().ok_or("expected value")?;
-                            self.stack.push((a.as_i32()? as i8 as i32).into());
-                        }
-                        I32Extend16S => {
-                            let a = self.stack.pop().ok_or("expected value")?;
-                            self.stack.push((a.as_i32()? as i16 as i32).into());
-                        }
-                        I64Extend8S => {
-                            let a = self.stack.pop().ok_or("expected value")?;
-                            self.stack.push((a.as_i64()? as i8 as i64).into());
-                        }
-                        I64Extend16S => {
-                            let a = self.stack.pop().ok_or("expected value")?;
-                            self.stack.push((a.as_i64()? as i16 as i64).into());
-                        }
-                        I64Extend32S => {
-                            let a = self.stack.pop().ok_or("expected value")?;
-                            self.stack.push((a.as_i64()? as i32 as i64).into());
-                        }
-                        I32WrapI64 => {
-                            let a = self.stack.pop().ok_or("expected value")?;
-                            self.stack.push((a.as_i64()? as i32).into());
-                        }
-                        I64ExtendI32S => {
-                            let a = self.stack.pop().ok_or("expected value")?;
-                            self.stack.push((a.as_i32()? as i64).into());
-                        }
-                        I64ExtendI32U => {
-                            let a = self.stack.pop().ok_or("expected value")?;
-                            self.stack.push((a.as_i32()? as u32 as i64).into());
-                        }
+                    let result = match op {
+                        I32Extend8S => (a.as_i32()? as i8 as i32).into(),
+                        I32Extend16S => (a.as_i32()? as i16 as i32).into(),
+                        I64Extend8S => (a.as_i64()? as i8 as i64).into(),
+                        I64Extend16S => (a.as_i64()? as i16 as i64).into(),
+                        I64Extend32S => (a.as_i64()? as i32 as i64).into(),
+                        I32WrapI64 => (a.as_i64()? as i32).into(),
+                        I64ExtendI32S => (a.as_i32()? as i64).into(),
+                        I64ExtendI32U => (a.as_i32()? as u32 as i64).into(),
+                        I32TruncF32S => (a.as_f32()?.trunc() as i32).into(),
+                        I32TruncF32U => (a.as_f32()?.trunc() as u32 as i32).into(),
+                        I32TruncF64S => (a.as_f64()?.trunc() as i32).into(),
+                        I32TruncF64U => (a.as_f64()?.trunc() as u32 as i32).into(),
+                        I64TruncF32S => (a.as_f32()?.trunc() as i64).into(),
+                        I64TruncF32U => (a.as_f32()?.trunc() as u64 as i64).into(),
+                        I64TruncF64S => (a.as_f64()?.trunc() as i64).into(),
+                        I64TruncF64U => (a.as_f64()?.trunc() as u64 as i64).into(),
+                        F32ConvertI32S => (a.as_i32()? as f32).into(),
+                        F32ConvertI32U => (a.as_i32()? as u32 as f32).into(),
+                        F32ConvertI64S => (a.as_i64()? as f32).into(),
+                        F32ConvertI64U => (a.as_i64()? as u64 as f32).into(),
+                        F32DemoteF64 => (a.as_f64()? as f32).into(),
+                        F64ConvertI32S => (a.as_i32()? as f64).into(),
+                        F64ConvertI32U => (a.as_i32()? as u32 as f64).into(),
+                        F64ConvertI64S => (a.as_i64()? as f64).into(),
+                        F64ConvertI64U => (a.as_i64()? as u64 as f64).into(),
+                        F64PromoteF32 => (a.as_f32()? as f64).into(),
+                        I32ReinterpretF32 => (a.as_f32()?.to_bits() as i32).into(),
+                        I64ReinterpretF64 => (a.as_f64()?.to_bits() as i64).into(),
+                        F32ReinterpretI32 => (f32::from_bits(a.as_i32()? as u32)).into(),
+                        F64ReinterpretI64 => (f64::from_bits(a.as_i64()? as u64)).into(),
                         _ => unreachable!("opcode {:?} is not a cutop", op),
-                    }
+                    };
+                    self.stack.push(result);
+                }
+                Instr::TruncSat(op) => {
+                    let a = self.stack.pop().ok_or("expected value")?;
+                    use TruncSatOp::*;
+                    let result = if a.is_nan() {
+                        match op {
+                            I32TruncSatF32S | I32TruncSatF32U | I32TruncSatF64S
+                            | I32TruncSatF64U => Value::I32(0),
+                            I64TruncSatF32S | I64TruncSatF32U | I64TruncSatF64S
+                            | I64TruncSatF64U => Value::I64(0),
+                        }
+                    } else if a.is_pos_inf() {
+                        match op {
+                            I32TruncSatF32S | I32TruncSatF64S => Value::I32(i32::MAX),
+                            I32TruncSatF32U | I32TruncSatF64U => Value::I32(u32::MAX as i32),
+                            I64TruncSatF32S | I64TruncSatF64S => Value::I64(i64::MAX),
+                            I64TruncSatF32U | I64TruncSatF64U => Value::I64(u64::MAX as i64),
+                        }
+                    } else if a.is_neg_inf() {
+                        match op {
+                            I32TruncSatF32S | I32TruncSatF64S => Value::I32(i32::MIN),
+                            I32TruncSatF32U | I32TruncSatF64U => Value::I32(0),
+                            I64TruncSatF32S | I64TruncSatF64S => Value::I64(i64::MIN),
+                            I64TruncSatF32U | I64TruncSatF64U => Value::I64(0),
+                        }
+                    } else {
+                        match op {
+                            I32TruncSatF32S => Value::I32(a.as_f32()?.trunc() as i32),
+                            I32TruncSatF32U => Value::I32(a.as_f32()?.trunc() as u32 as i32),
+                            I32TruncSatF64S => Value::I32(a.as_f64()?.trunc() as i32),
+                            I32TruncSatF64U => Value::I32(a.as_f64()?.trunc() as u32 as i32),
+                            I64TruncSatF32S => Value::I64(a.as_f32()?.trunc() as i64),
+                            I64TruncSatF32U => Value::I64(a.as_f32()?.trunc() as u64 as i64),
+                            I64TruncSatF64S => Value::I64(a.as_f64()?.trunc() as i64),
+                            I64TruncSatF64U => Value::I64(a.as_f64()?.trunc() as u64 as i64),
+                        }
+                    };
+                    self.stack.push(result);
                 }
             }
             frame.pc += 1;
