@@ -220,3 +220,8 @@ fn test_fac() {
 fn test_f32() {
     test_suite("f32.wast");
 }
+
+#[test]
+fn test_f64() {
+    test_suite("f64.wast");
+}
