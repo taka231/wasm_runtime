@@ -251,3 +251,8 @@ fn test_conversions() {
 fn test_local_get() {
     test_suite("local_get.wast");
 }
+
+#[test]
+fn test_local_set() {
+    test_suite("local_set.wast");
+}
