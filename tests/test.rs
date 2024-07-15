@@ -230,3 +230,8 @@ fn test_f32() {
 fn test_f64() {
     test_suite("f64.wast");
 }
+
+#[test]
+fn test_forward() {
+    test_suite("forward.wast");
+}
