@@ -220,6 +220,7 @@ impl Runtime {
             dbg!(&frame.labels);
             dbg!(&frame.instrs[pc]);
             match &frame.instrs[pc] {
+                Instr::Nop => {}
                 Instr::I64Const(n) => {
                     self.stack.push(n.into());
                 }

@@ -135,6 +135,7 @@ pub struct FuncType {
 
 #[derive(Debug, Clone)]
 pub enum Instr {
+    Nop,
     Block {
         block_type: BlockType,
         jump_pc: usize,
@@ -198,6 +199,7 @@ enum_try_from_int! {
     #[repr(u8)]
     #[derive(Debug, Clone, PartialEq)]
     pub enum Opcode {
+        Nop = 0x01,
         Block = 0x02,
         Loop = 0x03,
         If = 0x04,
