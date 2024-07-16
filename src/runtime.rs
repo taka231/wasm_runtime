@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::wasm::{
-    ExportDesc, Func, FuncType, ImportDesc, Instr, Locals, Opcode, Section, SectionContent,
+    ExportDesc, Func, FuncType, ImportDesc, Instr, Locals, Memarg, Opcode, Section, SectionContent,
     TruncSatOp, TypeIdx, ValType,
 };
 
@@ -13,6 +13,7 @@ pub struct Runtime {
     pub types: Vec<FuncType>,
     pub imports: Option<HashMap<(String, String), ImportDesc>>,
     pub exports: Option<HashMap<String, ExportDesc>>,
+    pub memory: Memory,
     pub func_offset: u32,
     pub frames: Vec<Frame>,
 }
@@ -25,6 +26,25 @@ pub struct Frame {
     pub return_num: usize,
     pub locals: Vec<Value>,
     pub labels: Vec<Label>,
+}
+
+#[derive(Debug)]
+pub struct Memory {
+    pub data: Vec<u8>,
+    pub max: Option<u32>,
+}
+
+impl Memory {
+    fn store(&mut self, offset: u32, index: u32, size: u32, value: &[u8]) -> Result<(), String> {
+        let addr = offset + index;
+        let addr = addr as usize;
+        let size = size as usize;
+        if addr + size > self.data.len() {
+            return Err("Out of memory".to_string());
+        }
+        self.data[addr..addr + size].copy_from_slice(value);
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -123,6 +143,10 @@ impl Runtime {
         let mut imports = None;
         let mut exports = None;
         let mut func_offset = 0;
+        let mut memory = Memory {
+            data: vec![],
+            max: None,
+        };
         for section in sections {
             if let SectionContent::Code(funcs) = section.content {
                 codes = Some(funcs);
@@ -139,7 +163,10 @@ impl Runtime {
                 func_offset = import_func_count;
             } else if let SectionContent::Export(export_map) = section.content {
                 exports = Some(export_map);
-            };
+            } else if let SectionContent::Memory(limits) = section.content {
+                memory.data = vec![0; 8192 * limits[0].min as usize];
+                memory.max = limits[0].max;
+            }
         }
         if types.is_none() {
             panic!("Type section not found");
@@ -151,6 +178,7 @@ impl Runtime {
             types: types.unwrap(),
             imports,
             exports,
+            memory,
             func_offset,
             frames: Vec::new(),
         }
@@ -241,6 +269,24 @@ impl Runtime {
                 Instr::LocalGet(n) => {
                     let value = frame.locals[*n as usize].clone();
                     self.stack.push(value);
+                }
+                Instr::MemoryInstrWithMemarg(op, Memarg { offset, .. }) => {
+                    use Opcode::*;
+                    match op {
+                        I32Store => {
+                            let value = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                            let addr = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                            self.memory
+                                .store(*offset, addr as u32, 4, &value.to_le_bytes())?;
+                        }
+                        I64Store => {
+                            let value = self.stack.pop().ok_or("expected value")?.as_i64()?;
+                            let addr = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                            self.memory
+                                .store(*offset, addr as u32, 8, &value.to_le_bytes())?;
+                        }
+                        _ => unreachable!("opcode {:?} is not a memory instruction", op),
+                    }
                 }
                 Instr::Block {
                     block_type,

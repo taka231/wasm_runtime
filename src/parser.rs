@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::wasm::{
-    BlockType, ExportDesc, Func, FuncType, ImportDesc, Instr, Limits, Locals, Opcode, ResultType,
-    Section, SectionContent, ValType,
+    BlockType, ExportDesc, Func, FuncType, ImportDesc, Instr, Limits, Locals, Memarg, Opcode,
+    ResultType, Section, SectionContent, ValType,
 };
 
 #[derive(Debug)]
@@ -395,7 +395,11 @@ impl<'a> Parser<'a> {
                 Ok(Instr::TruncSat(trunc_sat_op))
             }
             op => {
-                if op.is_iunop() {
+                if op.is_memory_instr_with_memarg() {
+                    let align = self.parse_leb128_u32()?;
+                    let offset = self.parse_leb128_u32()?;
+                    Ok(Instr::MemoryInstrWithMemarg(op, Memarg { align, offset }))
+                } else if op.is_iunop() {
                     Ok(Instr::Iunop(op))
                 } else if op.is_ibinop() {
                     Ok(Instr::Ibinop(op))

@@ -166,6 +166,7 @@ pub enum Instr {
     BrTable(Vec<u32>, u32),
     LocalGet(u32),
     LocalSet(u32),
+    MemoryInstrWithMemarg(Opcode, Memarg),
     I32Const(i32),
     I64Const(i64),
     F32Const(f32),
@@ -178,6 +179,12 @@ pub enum Instr {
     Irelop(Opcode),
     Cutop(Opcode),
     TruncSat(TruncSatOp),
+}
+
+#[derive(Debug, Clone)]
+pub struct Memarg {
+    pub align: u32,
+    pub offset: u32,
 }
 
 enum_try_from_int! {
@@ -219,6 +226,8 @@ enum_try_from_int! {
         Drop = 0x1a,
         LocalGet = 0x20,
         LocalSet = 0x21,
+        I32Store = 0x36,
+        I64Store = 0x37,
         I32Const = 0x41,
         I64Const = 0x42,
         F32Const = 0x43,
@@ -403,6 +412,13 @@ impl Opcode {
             | F64PromoteF32 | I32ReinterpretF32 | I64ReinterpretF64 | F32ReinterpretI32
             | F64ReinterpretI64 | I32Extend8S | I32Extend16S | I64Extend8S | I64Extend16S
             | I64Extend32S => true,
+            _ => false,
+        }
+    }
+    pub fn is_memory_instr_with_memarg(&self) -> bool {
+        use Opcode::*;
+        match self {
+            I32Store | I64Store => true,
             _ => false,
         }
     }
