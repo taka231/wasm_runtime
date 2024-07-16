@@ -271,3 +271,8 @@ fn test_switch() {
 fn test_store() {
     test_suite("store.wast");
 }
+
+#[test]
+fn test_block() {
+    test_suite("block.wast");
+}
