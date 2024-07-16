@@ -111,9 +111,7 @@ impl_into_value!(&f64, Value::F64);
 #[derive(Debug, Clone)]
 pub struct Label {
     sp: usize,
-    param_num: usize,
     return_num: usize,
-    is_loop: bool,
     jump_pc: usize,
 }
 
@@ -218,6 +216,9 @@ impl Runtime {
         };
         loop {
             let pc = frame.pc;
+            dbg!(&self.stack);
+            dbg!(&frame.labels);
+            dbg!(&frame.instrs[pc]);
             match &frame.instrs[pc] {
                 Instr::I64Const(n) => {
                     self.stack.push(n.into());
@@ -247,9 +248,7 @@ impl Runtime {
                     let param_num = block_type.count_args(&self.types);
                     frame.labels.push(Label {
                         sp: self.stack.len() - param_num,
-                        param_num,
                         return_num: block_type.count_results(&self.types),
-                        is_loop: false,
                         jump_pc: *jump_pc,
                     });
                 }
@@ -260,9 +259,7 @@ impl Runtime {
                     let param_num = block_type.count_args(&self.types);
                     frame.labels.push(Label {
                         sp: self.stack.len() - param_num,
-                        param_num,
                         return_num: block_type.count_results(&self.types),
-                        is_loop: true,
                         jump_pc: *jump_pc,
                     });
                 }
@@ -277,13 +274,14 @@ impl Runtime {
                         frame.pc = jump_pc;
                         if let Instr::Else { jump_pc: else_pc } = &frame.instrs[jump_pc] {
                             jump_pc = *else_pc;
+                        } else {
+                            // jump before the end instruction
+                            frame.pc -= 1;
                         }
                     }
                     frame.labels.push(Label {
                         sp: self.stack.len() - param_num,
-                        param_num,
                         return_num: block_type.count_results(&self.types),
-                        is_loop: false,
                         jump_pc,
                     });
                 }
@@ -642,21 +640,10 @@ impl Runtime {
     fn pop_labels(&mut self, frame: &mut Frame, count: usize) -> Result<bool, String> {
         for i in (0..=count).rev() {
             match frame.labels.last() {
-                Some(Label {
-                    sp,
-                    param_num,
-                    return_num,
-                    jump_pc,
-                    is_loop,
-                }) => {
+                Some(Label { jump_pc, .. }) => {
                     frame.pc = *jump_pc;
                     if i != 0 {
-                        self.trunc_and_stack_results(*sp, *return_num)?;
                         frame.labels.pop();
-                    } else if *is_loop {
-                        let params = self.stack.split_off(self.stack.len() - *param_num);
-                        self.trunc_and_stack_results(*sp, *return_num)?;
-                        self.stack.extend(params);
                     }
                 }
                 None => return Ok(true),
