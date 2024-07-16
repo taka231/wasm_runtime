@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::wasm::{
-    BlockType, ExportDesc, Func, FuncType, ImportDesc, Instr, Locals, Opcode, ResultType, Section,
-    SectionContent, ValType,
+    BlockType, ExportDesc, Func, FuncType, ImportDesc, Instr, Limits, Locals, Opcode, ResultType,
+    Section, SectionContent, ValType,
 };
 
 #[derive(Debug)]
@@ -140,8 +140,14 @@ impl<'a> Parser<'a> {
     }
     fn parse_memory(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
-        self.pos = skip_pos;
-        Ok(SectionContent::Memory)
+        let count = self.parse_leb128_u32()?;
+        let mut memories = Vec::new();
+        for _ in 0..count {
+            let limits = self.parse_limits()?;
+            memories.push(limits);
+        }
+        self.ensure_section_end(skip_pos)?;
+        Ok(SectionContent::Memory(memories))
     }
     fn parse_global(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
@@ -475,6 +481,24 @@ impl<'a> Parser<'a> {
         let params = self.parse_resulttype()?;
         let results = self.parse_resulttype()?;
         Ok(FuncType { params, results })
+    }
+    fn parse_limits(&mut self) -> Result<Limits> {
+        let byte = self
+            .next_byte()
+            .map_err(|err| format!("{err}: expected limits"))?;
+        if byte == 0x00 {
+            let min = self.parse_leb128_u32()?;
+            Ok(Limits { min, max: None })
+        } else if byte == 0x01 {
+            let min = self.parse_leb128_u32()?;
+            let max = self.parse_leb128_u32()?;
+            Ok(Limits {
+                min,
+                max: Some(max),
+            })
+        } else {
+            Err("Invalid limits".to_string())
+        }
     }
     fn parse_leb128_u32(&mut self) -> Result<u32> {
         let mut result = 0;

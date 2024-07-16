@@ -12,7 +12,7 @@ pub enum SectionContent {
     },
     Function(Vec<TypeIdx>),
     Table,
-    Memory,
+    Memory(Vec<Limits>),
     Global,
     Export(HashMap<String, ExportDesc>),
     Start,
@@ -20,6 +20,12 @@ pub enum SectionContent {
     Code(Vec<Func>),
     Data,
     DataCount,
+}
+
+#[derive(Debug)]
+pub struct Limits {
+    pub min: u32,
+    pub max: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
