@@ -261,3 +261,8 @@ fn test_local_set() {
 fn test_labels() {
     test_suite("labels.wast");
 }
+
+#[test]
+fn test_switch() {
+    test_suite("switch.wast");
+}
