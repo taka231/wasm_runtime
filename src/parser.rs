@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::wasm::{
-    BlockType, ExportDesc, Func, FuncType, ImportDesc, Instr, Limits, Locals, Memarg, Opcode,
-    RefType, ResultType, Section, SectionContent, TableType, ValType,
+    BlockType, Element, ExportDesc, Func, FuncType, ImportDesc, Instr, Limits, Locals, Memarg,
+    Mode, Opcode, RefType, ResultType, Section, SectionContent, TableType, ValType,
 };
 
 #[derive(Debug)]
@@ -190,8 +190,42 @@ impl<'a> Parser<'a> {
     }
     fn parse_element(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
-        self.pos = skip_pos;
-        Ok(SectionContent::Element)
+        let count = self.parse_leb128_u32()?;
+        let mut elements = Vec::new();
+        for _ in 0..count {
+            elements.push(self.parse_elem_content()?);
+        }
+        self.ensure_section_end(skip_pos)?;
+        Ok(SectionContent::Element(elements))
+    }
+    fn parse_elem_content(&mut self) -> Result<Element> {
+        let kind = self.next_byte().map_err(|_| "expected byte")?;
+        match kind {
+            0 => {
+                let expr = self.parse_instr()?;
+                let byte = self.next_byte().map_err(|_| "expected byte")?;
+                if byte != 0x0b {
+                    return Err("expected 0x0b".to_string());
+                }
+                let count = self.parse_leb128_u32()?;
+                let mut funcidxs = Vec::new();
+                for _ in 0..count {
+                    let funcidx = self.parse_leb128_u32()?;
+                    funcidxs.push(funcidx);
+                }
+                Ok(Element {
+                    ref_type: RefType::FuncRef,
+                    mode: Mode::Active {
+                        tableidx: 0,
+                        offset: expr,
+                    },
+                    expr: vec![],
+                    funcidxs,
+                })
+            }
+            1 | 2 | 3 | 4 | 5 | 6 | 7 => unimplemented!(),
+            _ => Err("Invalid element kind".to_string()),
+        }
     }
     fn parse_code(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;

@@ -16,10 +16,25 @@ pub enum SectionContent {
     Global,
     Export(HashMap<String, ExportDesc>),
     Start,
-    Element,
+    Element(Vec<Element>),
     Code(Vec<Func>),
     Data,
     DataCount,
+}
+
+#[derive(Debug, Clone)]
+pub struct Element {
+    pub ref_type: RefType,
+    pub mode: Mode,
+    pub expr: Vec<Instr>,
+    pub funcidxs: Vec<u32>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Mode {
+    Passive,
+    Active { tableidx: u32, offset: Instr },
+    Declarative,
 }
 
 #[derive(Debug, Clone)]

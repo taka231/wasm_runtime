@@ -244,9 +244,6 @@ impl Runtime {
         };
         loop {
             let pc = frame.pc;
-            dbg!(&self.stack);
-            dbg!(&frame.labels);
-            dbg!(&frame.instrs[pc]);
             match &frame.instrs[pc] {
                 Instr::Nop => {}
                 Instr::I64Const(n) => {
