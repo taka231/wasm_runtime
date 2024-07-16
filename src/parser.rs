@@ -360,6 +360,7 @@ impl<'a> Parser<'a> {
                 Ok(Instr::Call(funcidx))
             }
             Opcode::Drop => Ok(Instr::Drop),
+            Opcode::Select => Ok(Instr::Select),
             Opcode::Block => {
                 let block_type = self.parse_blocktype()?;
                 Ok(Instr::Block {
