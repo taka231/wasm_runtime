@@ -11,7 +11,7 @@ pub enum SectionContent {
         import_func_count: u32,
     },
     Function(Vec<TypeIdx>),
-    Table,
+    Table(Vec<TableType>),
     Memory(Vec<Limits>),
     Global,
     Export(HashMap<String, ExportDesc>),
@@ -22,7 +22,7 @@ pub enum SectionContent {
     DataCount,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Limits {
     pub min: u32,
     pub max: Option<u32>,
@@ -82,13 +82,22 @@ macro_rules! enum_try_from_int {
 
 enum_try_from_int! {
     #[repr(u8)]
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum ValType {
         I32 = 0x7f,
         I64 = 0x7e,
         F32 = 0x7d,
         F64 = 0x7c,
         V128 = 0x7b,
+        FuncRef = 0x70,
+        ExternRef = 0x6f,
+    }
+}
+
+enum_try_from_int! {
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum RefType {
         FuncRef = 0x70,
         ExternRef = 0x6f,
     }
@@ -186,6 +195,12 @@ pub enum Instr {
 pub struct Memarg {
     pub align: u32,
     pub offset: u32,
+}
+
+#[derive(Debug, Clone)]
+pub struct TableType {
+    pub elem_type: RefType,
+    pub limits: Limits,
 }
 
 enum_try_from_int! {

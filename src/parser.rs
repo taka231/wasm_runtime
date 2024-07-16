@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::wasm::{
     BlockType, ExportDesc, Func, FuncType, ImportDesc, Instr, Limits, Locals, Memarg, Opcode,
-    ResultType, Section, SectionContent, ValType,
+    RefType, ResultType, Section, SectionContent, TableType, ValType,
 };
 
 #[derive(Debug)]
@@ -135,8 +135,15 @@ impl<'a> Parser<'a> {
     }
     fn parse_table(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
-        self.pos = skip_pos;
-        Ok(SectionContent::Table)
+        let count = self.parse_leb128_u32()?;
+        let mut tables = Vec::new();
+        for _ in 0..count {
+            let elem_type = self.parse_reftype()?;
+            let limits = self.parse_limits()?;
+            tables.push(TableType { elem_type, limits });
+        }
+        self.ensure_section_end(skip_pos)?;
+        Ok(SectionContent::Table(tables))
     }
     fn parse_memory(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
@@ -504,6 +511,12 @@ impl<'a> Parser<'a> {
         } else {
             Err("Invalid limits".to_string())
         }
+    }
+    fn parse_reftype(&mut self) -> Result<RefType> {
+        self.next_byte()
+            .map_err(|err| format!("{err}: expected reftype"))?
+            .try_into()
+            .map_err(|_| format!("invalid reftype"))
     }
     fn parse_leb128_u32(&mut self) -> Result<u32> {
         let mut result = 0;
