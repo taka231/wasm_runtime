@@ -291,3 +291,8 @@ fn test_f64_cmp() {
 fn test_br() {
     test_suite("br.wast");
 }
+
+#[test]
+fn test_br_if() {
+    test_suite("br_if.wast");
+}
