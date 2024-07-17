@@ -493,6 +493,8 @@ impl<'a> Parser<'a> {
                     Ok(Instr::Funop(op))
                 } else if op.is_fbinop() {
                     Ok(Instr::Fbinop(op))
+                } else if op.is_frelop() {
+                    Ok(Instr::Frelop(op))
                 } else {
                     Err(format!("Invalid opcode: {:?}", op))
                 }

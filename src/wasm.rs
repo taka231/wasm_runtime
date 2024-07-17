@@ -214,6 +214,7 @@ pub enum Instr {
     Fbinop(Opcode),
     Itestop(Opcode),
     Irelop(Opcode),
+    Frelop(Opcode),
     Cutop(Opcode),
     TruncSat(TruncSatOp),
 }
@@ -305,6 +306,18 @@ enum_try_from_int! {
         I64LeU = 0x58,
         I64GeS = 0x59,
         I64GeU = 0x5a,
+        F32Eq = 0x5b,
+        F32Ne = 0x5c,
+        F32Lt = 0x5d,
+        F32Gt = 0x5e,
+        F32Le = 0x5f,
+        F32Ge = 0x60,
+        F64Eq = 0x61,
+        F64Ne = 0x62,
+        F64Lt = 0x63,
+        F64Gt = 0x64,
+        F64Le = 0x65,
+        F64Ge = 0x66,
         I32Clz = 0x67,
         I32Ctz = 0x68,
         I32Popcnt = 0x69,
@@ -424,6 +437,14 @@ impl Opcode {
         match self {
             F32Add | F32Sub | F32Mul | F32Div | F32Min | F32Max | F32Copysign | F64Add | F64Sub
             | F64Mul | F64Div | F64Min | F64Max | F64Copysign => true,
+            _ => false,
+        }
+    }
+    pub fn is_frelop(&self) -> bool {
+        use Opcode::*;
+        match self {
+            F32Eq | F32Ne | F32Lt | F32Gt | F32Le | F32Ge | F64Eq | F64Ne | F64Lt | F64Gt
+            | F64Le | F64Ge => true,
             _ => false,
         }
     }

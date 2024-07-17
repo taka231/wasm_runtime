@@ -690,6 +690,27 @@ impl Runtime {
                     };
                     self.stack.push(result);
                 }
+                Instr::Frelop(op) => {
+                    let b = self.stack.pop().ok_or("expected value")?;
+                    let a = self.stack.pop().ok_or("expected value")?;
+                    use Opcode::*;
+                    let result = match op {
+                        F32Eq => ((a.as_f32()? == b.as_f32()?) as i32).into(),
+                        F32Ne => ((a.as_f32()? != b.as_f32()?) as i32).into(),
+                        F32Lt => ((a.as_f32()? < b.as_f32()?) as i32).into(),
+                        F32Gt => ((a.as_f32()? > b.as_f32()?) as i32).into(),
+                        F32Le => ((a.as_f32()? <= b.as_f32()?) as i32).into(),
+                        F32Ge => ((a.as_f32()? >= b.as_f32()?) as i32).into(),
+                        F64Eq => ((a.as_f64()? == b.as_f64()?) as i32).into(),
+                        F64Ne => ((a.as_f64()? != b.as_f64()?) as i32).into(),
+                        F64Lt => ((a.as_f64()? < b.as_f64()?) as i32).into(),
+                        F64Gt => ((a.as_f64()? > b.as_f64()?) as i32).into(),
+                        F64Le => ((a.as_f64()? <= b.as_f64()?) as i32).into(),
+                        F64Ge => ((a.as_f64()? >= b.as_f64()?) as i32).into(),
+                        _ => unreachable!("opcode {:?} is not a frelop", op),
+                    };
+                    self.stack.push(result);
+                }
                 Instr::Irelop(op) => {
                     let b = self.stack.pop().ok_or("expected value")?;
                     let a = self.stack.pop().ok_or("expected value")?;
