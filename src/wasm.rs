@@ -13,13 +13,20 @@ pub enum SectionContent {
     Function(Vec<TypeIdx>),
     Table(Vec<TableType>),
     Memory(Vec<Limits>),
-    Global,
+    Global(Vec<Global>),
     Export(HashMap<String, ExportDesc>),
     Start,
     Element(Vec<Element>),
     Code(Vec<Func>),
     Data,
     DataCount,
+}
+
+#[derive(Debug, Clone)]
+pub struct Global {
+    pub ty: ValType,
+    pub is_mutable: bool,
+    pub init: Vec<Instr>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,7 +40,7 @@ pub struct Element {
 #[derive(Debug, Clone)]
 pub enum Mode {
     Passive,
-    Active { tableidx: u32, offset: Instr },
+    Active { tableidx: u32, offset: Vec<Instr> },
     Declarative,
 }
 

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::wasm::{
-    BlockType, Element, ExportDesc, Func, FuncType, ImportDesc, Instr, Limits, Locals, Memarg,
-    Mode, Opcode, RefType, ResultType, Section, SectionContent, TableType, ValType,
+    BlockType, Element, ExportDesc, Func, FuncType, Global, ImportDesc, Instr, Limits, Locals,
+    Memarg, Mode, Opcode, RefType, ResultType, Section, SectionContent, TableType, ValType,
 };
 
 #[derive(Debug)]
@@ -158,8 +158,26 @@ impl<'a> Parser<'a> {
     }
     fn parse_global(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
-        self.pos = skip_pos;
-        Ok(SectionContent::Global)
+        let count = self.parse_leb128_u32()?;
+        let mut globals = Vec::new();
+        for _ in 0..count {
+            let ty = self.parse_valtype()?;
+            let is_mutable = match self.next_byte()? {
+                0x00 => false,
+                0x01 => true,
+                _ => {
+                    return Err("Invalid mutability".to_string());
+                }
+            };
+            let expr = self.parse_expr()?;
+            globals.push(Global {
+                ty,
+                is_mutable,
+                init: expr,
+            });
+        }
+        self.ensure_section_end(skip_pos)?;
+        Ok(SectionContent::Global(globals))
     }
     fn parse_export(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
@@ -202,11 +220,7 @@ impl<'a> Parser<'a> {
         let kind = self.next_byte().map_err(|_| "expected byte")?;
         match kind {
             0 => {
-                let expr = self.parse_instr()?;
-                let byte = self.next_byte().map_err(|_| "expected byte")?;
-                if byte != 0x0b {
-                    return Err("expected 0x0b".to_string());
-                }
+                let offset = self.parse_expr()?;
                 let count = self.parse_leb128_u32()?;
                 let mut funcidxs = Vec::new();
                 for _ in 0..count {
@@ -217,7 +231,7 @@ impl<'a> Parser<'a> {
                     ref_type: RefType::FuncRef,
                     mode: Mode::Active {
                         tableidx: 0,
-                        offset: expr,
+                        offset,
                     },
                     expr: vec![],
                     funcidxs,
@@ -495,6 +509,17 @@ impl<'a> Parser<'a> {
     }
     fn is_eof(&self) -> bool {
         self.pos >= self.bytes.len()
+    }
+    fn parse_expr(&mut self) -> Result<Vec<Instr>> {
+        let mut instrs = Vec::new();
+        loop {
+            let instr = self.parse_instr()?;
+            if let Instr::End = instr {
+                break;
+            }
+            instrs.push(instr);
+        }
+        Ok(instrs)
     }
     fn parse_name(&mut self) -> Result<String> {
         let size = self.parse_leb128_u32()?;

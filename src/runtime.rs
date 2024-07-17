@@ -14,6 +14,7 @@ pub struct Runtime {
     pub imports: Option<HashMap<(String, String), ImportDesc>>,
     pub exports: Option<HashMap<String, ExportDesc>>,
     pub memory: Memory,
+    pub global: Vec<Global>,
     pub tables: Vec<Table>,
     pub func_offset: u32,
     pub frames: Vec<Frame>,
@@ -33,6 +34,12 @@ pub struct Frame {
 pub enum Table {
     Funcs(Vec<Option<usize>>),
     Refs(Vec<Option<Value>>),
+}
+
+#[derive(Debug)]
+pub struct Global {
+    pub value: Value,
+    pub mutable: bool,
 }
 
 #[derive(Debug)]
@@ -155,6 +162,7 @@ impl Runtime {
             max: None,
         };
         let mut tables = Vec::new();
+        let mut globals = Vec::new();
         for section in sections {
             if let SectionContent::Code(funcs) = section.content {
                 codes = Some(funcs);
@@ -191,7 +199,7 @@ impl Runtime {
                     if let Mode::Active { tableidx, offset } = element.mode {
                         if element.ref_type == RefType::FuncRef {
                             let table = &mut tables[tableidx as usize];
-                            let offset = match offset {
+                            let offset = match offset[0] {
                                 Instr::I32Const(n) => n as usize,
                                 Instr::I64Const(n) => n as usize,
                                 _ => unimplemented!(),
@@ -206,6 +214,21 @@ impl Runtime {
                             }
                         }
                     }
+                }
+            } else if let SectionContent::Global(globals_) = section.content {
+                for global in globals_ {
+                    let value = match global.init[0] {
+                        Instr::I32Const(n) => Value::I32(n),
+                        Instr::I64Const(n) => Value::I64(n),
+                        Instr::F32Const(f) => Value::F32(f),
+                        Instr::F64Const(f) => Value::F64(f),
+                        _ => unimplemented!(),
+                    };
+                    let global = Global {
+                        value,
+                        mutable: global.is_mutable,
+                    };
+                    globals.push(global);
                 }
             }
         }
@@ -222,6 +245,7 @@ impl Runtime {
             exports,
             memory,
             tables,
+            global: globals,
             func_offset,
             frames: Vec::new(),
         }
