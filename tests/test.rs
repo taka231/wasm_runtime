@@ -286,3 +286,8 @@ fn test_f32_cmp() {
 fn test_f64_cmp() {
     test_suite("f64_cmp.wast");
 }
+
+#[test]
+fn test_br() {
+    test_suite("br.wast");
+}

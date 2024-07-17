@@ -365,23 +365,86 @@ impl Runtime {
                 Instr::MemoryInstrWithMemarg(op, Memarg { offset, .. }) => {
                     use Opcode::*;
                     match op {
-                        I32Load => {
-                            let addr = self.stack.pop().ok_or("expected value")?.as_i32()?;
-                            let addr = addr as u32;
-                            let value = self.memory.load(*offset, addr, 4)?;
-                            let value =
-                                i32::from_le_bytes([value[0], value[1], value[2], value[3]]);
-                            self.stack.push(Value::I32(value));
-                        }
-                        I64Load => {
-                            let addr = self.stack.pop().ok_or("expected value")?.as_i32()?;
-                            let addr = addr as u32;
-                            let value = self.memory.load(*offset, addr, 8)?;
-                            let value = i64::from_le_bytes([
-                                value[0], value[1], value[2], value[3], value[4], value[5],
-                                value[6], value[7],
-                            ]);
-                            self.stack.push(Value::I64(value));
+                        I32Load | I64Load | F32Load | F64Load | I32Load8S | I32Load8U
+                        | I32Load16S | I32Load16U | I64Load8S | I64Load8U | I64Load16S
+                        | I64Load16U | I64Load32S | I64Load32U => {
+                            let addr = self.stack.pop().ok_or("expected value")?.as_i32()? as u32;
+                            let value = match op {
+                                I32Load => {
+                                    let value = self.memory.load(*offset, addr, 4)?;
+                                    i32::from_le_bytes([value[0], value[1], value[2], value[3]])
+                                        .into()
+                                }
+                                I64Load => {
+                                    let value = self.memory.load(*offset, addr, 8)?;
+                                    i64::from_le_bytes([
+                                        value[0], value[1], value[2], value[3], value[4], value[5],
+                                        value[6], value[7],
+                                    ])
+                                    .into()
+                                }
+                                F32Load => {
+                                    let value = self.memory.load(*offset, addr, 4)?;
+                                    f32::from_bits(u32::from_le_bytes([
+                                        value[0], value[1], value[2], value[3],
+                                    ]))
+                                    .into()
+                                }
+                                F64Load => {
+                                    let value = self.memory.load(*offset, addr, 8)?;
+                                    f64::from_bits(u64::from_le_bytes([
+                                        value[0], value[1], value[2], value[3], value[4], value[5],
+                                        value[6], value[7],
+                                    ]))
+                                    .into()
+                                }
+                                I32Load8S => {
+                                    let value = self.memory.load(*offset, addr, 1)?;
+                                    (i8::from_le_bytes([value[0]]) as i32).into()
+                                }
+                                I32Load8U => {
+                                    let value = self.memory.load(*offset, addr, 1)?;
+                                    (u8::from_le_bytes([value[0]]) as i32).into()
+                                }
+                                I32Load16S => {
+                                    let value = self.memory.load(*offset, addr, 2)?;
+                                    (i16::from_le_bytes([value[0], value[1]]) as i32).into()
+                                }
+                                I32Load16U => {
+                                    let value = self.memory.load(*offset, addr, 2)?;
+                                    (u16::from_le_bytes([value[0], value[1]]) as i32).into()
+                                }
+                                I64Load8S => {
+                                    let value = self.memory.load(*offset, addr, 1)?;
+                                    (i8::from_le_bytes([value[0]]) as i64).into()
+                                }
+                                I64Load8U => {
+                                    let value = self.memory.load(*offset, addr, 1)?;
+                                    (u8::from_le_bytes([value[0]]) as i64).into()
+                                }
+                                I64Load16S => {
+                                    let value = self.memory.load(*offset, addr, 2)?;
+                                    (i16::from_le_bytes([value[0], value[1]]) as i64).into()
+                                }
+                                I64Load16U => {
+                                    let value = self.memory.load(*offset, addr, 2)?;
+                                    (u16::from_le_bytes([value[0], value[1]]) as i64).into()
+                                }
+                                I64Load32S => {
+                                    let value = self.memory.load(*offset, addr, 4)?;
+                                    (i32::from_le_bytes([value[0], value[1], value[2], value[3]])
+                                        as i64)
+                                        .into()
+                                }
+                                I64Load32U => {
+                                    let value = self.memory.load(*offset, addr, 4)?;
+                                    (u32::from_le_bytes([value[0], value[1], value[2], value[3]])
+                                        as i64)
+                                        .into()
+                                }
+                                _ => unreachable!(),
+                            };
+                            self.stack.push(value);
                         }
                         I32Store => {
                             let value = self.stack.pop().ok_or("expected value")?.as_i32()?;
@@ -394,6 +457,54 @@ impl Runtime {
                             let addr = self.stack.pop().ok_or("expected value")?.as_i32()?;
                             self.memory
                                 .store(*offset, addr as u32, 8, &value.to_le_bytes())?;
+                        }
+                        F32Store => {
+                            let value = self.stack.pop().ok_or("expected value")?.as_f32()?;
+                            let addr = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                            self.memory.store(
+                                *offset,
+                                addr as u32,
+                                4,
+                                &value.to_bits().to_le_bytes(),
+                            )?;
+                        }
+                        F64Store => {
+                            let value = self.stack.pop().ok_or("expected value")?.as_f64()?;
+                            let addr = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                            self.memory.store(
+                                *offset,
+                                addr as u32,
+                                8,
+                                &value.to_bits().to_le_bytes(),
+                            )?;
+                        }
+                        I32Store8 => {
+                            let value = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                            let addr = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                            self.memory.store(*offset, addr as u32, 1, &[value as u8])?;
+                        }
+                        I32Store16 => {
+                            let value = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                            let addr = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                            self.memory
+                                .store(*offset, addr as u32, 2, &value.to_le_bytes())?;
+                        }
+                        I64Store8 => {
+                            let value = self.stack.pop().ok_or("expected value")?.as_i64()?;
+                            let addr = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                            self.memory.store(*offset, addr as u32, 1, &[value as u8])?;
+                        }
+                        I64Store16 => {
+                            let value = self.stack.pop().ok_or("expected value")?.as_i64()?;
+                            let addr = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                            self.memory
+                                .store(*offset, addr as u32, 2, &value.to_le_bytes())?;
+                        }
+                        I64Store32 => {
+                            let value = self.stack.pop().ok_or("expected value")?.as_i64()?;
+                            let addr = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                            self.memory
+                                .store(*offset, addr as u32, 4, &value.to_le_bytes())?;
                         }
                         _ => unreachable!("opcode {:?} is not a memory instruction", op),
                     }

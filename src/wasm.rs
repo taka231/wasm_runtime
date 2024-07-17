@@ -279,8 +279,27 @@ enum_try_from_int! {
         GlobalSet = 0x24,
         I32Load = 0x28,
         I64Load = 0x29,
+        F32Load = 0x2a,
+        F64Load = 0x2b,
+        I32Load8S = 0x2c,
+        I32Load8U = 0x2d,
+        I32Load16S = 0x2e,
+        I32Load16U = 0x2f,
+        I64Load8S = 0x30,
+        I64Load8U = 0x31,
+        I64Load16S = 0x32,
+        I64Load16U = 0x33,
+        I64Load32S = 0x34,
+        I64Load32U = 0x35,
         I32Store = 0x36,
         I64Store = 0x37,
+        F32Store = 0x38,
+        F64Store = 0x39,
+        I32Store8 = 0x3a,
+        I32Store16 = 0x3b,
+        I64Store8 = 0x3c,
+        I64Store16 = 0x3d,
+        I64Store32 = 0x3e,
         MemoryGrow = 0x40,
         I32Const = 0x41,
         I64Const = 0x42,
@@ -492,7 +511,10 @@ impl Opcode {
     pub fn is_memory_instr_with_memarg(&self) -> bool {
         use Opcode::*;
         match self {
-            I32Load | I64Load | I32Store | I64Store => true,
+            I32Load | I64Load | F32Load | F64Load | I32Load8S | I32Load8U | I32Load16S
+            | I32Load16U | I64Load8S | I64Load8U | I64Load16S | I64Load16U | I64Load32S
+            | I64Load32U | I32Store | I64Store | F32Store | F64Store | I32Store8 | I32Store16
+            | I64Store8 | I64Store16 | I64Store32 => true,
             _ => false,
         }
     }
