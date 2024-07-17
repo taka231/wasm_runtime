@@ -321,6 +321,7 @@ impl Runtime {
         loop {
             let pc = frame.pc;
             match &frame.instrs[pc] {
+                Instr::Unreachable => Err("unreachable")?,
                 Instr::Nop => {}
                 Instr::I64Const(n) => {
                     self.stack.push(n.into());
