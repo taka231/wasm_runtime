@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::wasm::{
-    ExportDesc, Func, FuncType, ImportDesc, Instr, Locals, Memarg, Opcode, Section, SectionContent,
-    TruncSatOp, TypeIdx, ValType,
+    ExportDesc, Func, FuncType, ImportDesc, Instr, Locals, Memarg, Mode, Opcode, RefType, Section,
+    SectionContent, TruncSatOp, TypeIdx, ValType,
 };
 
 #[derive(Debug)]
@@ -14,6 +14,7 @@ pub struct Runtime {
     pub imports: Option<HashMap<(String, String), ImportDesc>>,
     pub exports: Option<HashMap<String, ExportDesc>>,
     pub memory: Memory,
+    pub tables: Vec<Table>,
     pub func_offset: u32,
     pub frames: Vec<Frame>,
 }
@@ -26,6 +27,12 @@ pub struct Frame {
     pub return_num: usize,
     pub locals: Vec<Value>,
     pub labels: Vec<Label>,
+}
+
+#[derive(Debug)]
+pub enum Table {
+    Funcs(Vec<Option<usize>>),
+    Refs(Vec<Option<Value>>),
 }
 
 #[derive(Debug)]
@@ -147,6 +154,7 @@ impl Runtime {
             data: vec![],
             max: None,
         };
+        let mut tables = Vec::new();
         for section in sections {
             if let SectionContent::Code(funcs) = section.content {
                 codes = Some(funcs);
@@ -166,8 +174,42 @@ impl Runtime {
             } else if let SectionContent::Memory(limits) = section.content {
                 memory.data = vec![0; 8192 * limits[0].min as usize];
                 memory.max = limits[0].max;
+            } else if let SectionContent::Table(table_types) = section.content {
+                for table_type in table_types {
+                    let table = match table_type.elem_type {
+                        RefType::FuncRef => {
+                            Table::Funcs(vec![None; table_type.limits.min as usize])
+                        }
+                        RefType::ExternRef => {
+                            Table::Refs(vec![None; table_type.limits.min as usize])
+                        }
+                    };
+                    tables.push(table);
+                }
+            } else if let SectionContent::Element(elements) = section.content {
+                for element in elements {
+                    if let Mode::Active { tableidx, offset } = element.mode {
+                        if element.ref_type == RefType::FuncRef {
+                            let table = &mut tables[tableidx as usize];
+                            let offset = match offset {
+                                Instr::I32Const(n) => n as usize,
+                                Instr::I64Const(n) => n as usize,
+                                _ => unimplemented!(),
+                            };
+                            match table {
+                                Table::Funcs(funcs) => {
+                                    for (i, funcidx) in element.funcidxs.iter().enumerate() {
+                                        funcs[offset as usize + i] = Some(*funcidx as usize);
+                                    }
+                                }
+                                _ => panic!("Invalid table type"),
+                            }
+                        }
+                    }
+                }
             }
         }
+
         if types.is_none() {
             panic!("Type section not found");
         }
@@ -179,6 +221,7 @@ impl Runtime {
             imports,
             exports,
             memory,
+            tables,
             func_offset,
             frames: Vec::new(),
         }
@@ -381,6 +424,23 @@ impl Runtime {
                     let n = *n;
                     self.frames.push(frame);
                     self.call(n as usize)?;
+                    frame = self.frames.pop().ok_or("expected frame")?;
+                }
+                Instr::CallIndirect(typeidx, tableidx) => {
+                    let typeidx = *typeidx;
+                    let tableidx = *tableidx;
+                    let funcidx = match &self.tables[tableidx as usize] {
+                        Table::Funcs(funcs) => {
+                            let index = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                            funcs[index as usize].ok_or("expected function index")?
+                        }
+                        _ => Err("Invalid table type")?,
+                    };
+                    if self.func_types.as_ref().unwrap()[funcidx] != typeidx {
+                        Err("Function type mismatch")?;
+                    }
+                    self.frames.push(frame);
+                    self.call(funcidx)?;
                     frame = self.frames.pop().ok_or("expected frame")?;
                 }
                 Instr::Drop => {

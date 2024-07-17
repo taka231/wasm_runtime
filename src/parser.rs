@@ -400,6 +400,11 @@ impl<'a> Parser<'a> {
                 let funcidx = self.parse_leb128_u32()?;
                 Ok(Instr::Call(funcidx))
             }
+            Opcode::CallIndirect => {
+                let typeidx = self.parse_leb128_u32()?;
+                let tableidx = self.parse_leb128_u32()?;
+                Ok(Instr::CallIndirect(typeidx, tableidx))
+            }
             Opcode::Drop => Ok(Instr::Drop),
             Opcode::Select => Ok(Instr::Select),
             Opcode::Block => {
