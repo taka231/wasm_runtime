@@ -395,6 +395,14 @@ impl<'a> Parser<'a> {
                 let localidx = self.parse_leb128_u32()?;
                 Ok(Instr::LocalTee(localidx))
             }
+            Opcode::GlobalGet => {
+                let globalidx = self.parse_leb128_u32()?;
+                Ok(Instr::GlobalGet(globalidx))
+            }
+            Opcode::GlobalSet => {
+                let globalidx = self.parse_leb128_u32()?;
+                Ok(Instr::GlobalSet(globalidx))
+            }
             Opcode::Br => {
                 let labelidx = self.parse_leb128_u32()?;
                 Ok(Instr::Br(labelidx))

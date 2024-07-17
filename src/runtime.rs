@@ -339,6 +339,19 @@ impl Runtime {
                     let value = frame.locals[*n as usize].clone();
                     self.stack.push(value);
                 }
+                Instr::GlobalGet(n) => {
+                    let global = &self.global[*n as usize];
+                    self.stack.push(global.value.clone());
+                }
+                Instr::GlobalSet(n) => {
+                    let global = &mut self.global[*n as usize];
+                    if global.mutable {
+                        let value = self.stack.pop().ok_or("expected value")?;
+                        global.value = value;
+                    } else {
+                        Err("Global is immutable")?;
+                    }
+                }
                 Instr::MemoryInstrWithMemarg(op, Memarg { offset, .. }) => {
                     use Opcode::*;
                     match op {
