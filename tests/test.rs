@@ -276,3 +276,13 @@ fn test_store() {
 fn test_block() {
     test_suite("block.wast");
 }
+
+#[test]
+fn test_f32_cmp() {
+    test_suite("f32_cmp.wast");
+}
+
+#[test]
+fn test_f64_cmp() {
+    test_suite("f64_cmp.wast");
+}
