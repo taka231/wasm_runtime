@@ -441,6 +441,13 @@ impl<'a> Parser<'a> {
                 let trunc_sat_op = (num as u8).try_into().map_err(|_| "invalid trunc_sat_op")?;
                 Ok(Instr::TruncSat(trunc_sat_op))
             }
+            Opcode::MemoryGrow => {
+                let byte = self.next_byte().map_err(|_| "expected byte")?;
+                if byte != 0x00 {
+                    return Err("Invalid memory grow arg".to_string());
+                }
+                Ok(Instr::MemoryGrow)
+            }
             op => {
                 if op.is_memory_instr_with_memarg() {
                     let align = self.parse_leb128_u32()?;

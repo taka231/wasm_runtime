@@ -456,6 +456,19 @@ impl Runtime {
                         self.stack.push(b);
                     }
                 }
+                Instr::MemoryGrow => {
+                    let grow_size = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                    let current_size = self.memory.data.len() / 8192;
+                    let new_size = current_size + grow_size as usize;
+                    if let Some(max) = self.memory.max {
+                        if new_size > max as usize {
+                            self.stack.push((-1).into());
+                            continue;
+                        }
+                    }
+                    self.memory.data.resize(new_size * 8192, 0);
+                    self.stack.push(Value::I32(current_size as i32));
+                }
                 Instr::Ibinop(op) => {
                     let b = self.stack.pop().ok_or("expected value")?;
                     let a = self.stack.pop().ok_or("expected value")?;
