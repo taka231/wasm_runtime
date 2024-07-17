@@ -306,6 +306,11 @@ impl Runtime {
                     let value = self.stack.pop().ok_or("expected value")?;
                     frame.locals[n as usize] = value.into();
                 }
+                Instr::LocalTee(n) => {
+                    let n = *n;
+                    let value = self.stack.last().ok_or("expected value")?;
+                    frame.locals[n as usize] = value.clone();
+                }
                 Instr::LocalGet(n) => {
                     let value = frame.locals[*n as usize].clone();
                     self.stack.push(value);

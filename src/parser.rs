@@ -377,6 +377,10 @@ impl<'a> Parser<'a> {
                 let localidx = self.parse_leb128_u32()?;
                 Ok(Instr::LocalSet(localidx))
             }
+            Opcode::LocalTee => {
+                let localidx = self.parse_leb128_u32()?;
+                Ok(Instr::LocalTee(localidx))
+            }
             Opcode::Br => {
                 let labelidx = self.parse_leb128_u32()?;
                 Ok(Instr::Br(labelidx))
