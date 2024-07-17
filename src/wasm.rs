@@ -274,6 +274,8 @@ enum_try_from_int! {
         LocalTee = 0x22,
         GlobalGet = 0x23,
         GlobalSet = 0x24,
+        I32Load = 0x28,
+        I64Load = 0x29,
         I32Store = 0x36,
         I64Store = 0x37,
         MemoryGrow = 0x40,
@@ -467,7 +469,7 @@ impl Opcode {
     pub fn is_memory_instr_with_memarg(&self) -> bool {
         use Opcode::*;
         match self {
-            I32Store | I64Store => true,
+            I32Load | I64Load | I32Store | I64Store => true,
             _ => false,
         }
     }

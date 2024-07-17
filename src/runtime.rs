@@ -59,6 +59,15 @@ impl Memory {
         self.data[addr..addr + size].copy_from_slice(value);
         Ok(())
     }
+    fn load(&self, offset: u32, index: u32, size: u32) -> Result<&[u8], String> {
+        let addr = offset + index;
+        let addr = addr as usize;
+        let size = size as usize;
+        if addr + size > self.data.len() {
+            return Err("Out of memory".to_string());
+        }
+        Ok(&self.data[addr..addr + size])
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -355,6 +364,24 @@ impl Runtime {
                 Instr::MemoryInstrWithMemarg(op, Memarg { offset, .. }) => {
                     use Opcode::*;
                     match op {
+                        I32Load => {
+                            let addr = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                            let addr = addr as u32;
+                            let value = self.memory.load(*offset, addr, 4)?;
+                            let value =
+                                i32::from_le_bytes([value[0], value[1], value[2], value[3]]);
+                            self.stack.push(Value::I32(value));
+                        }
+                        I64Load => {
+                            let addr = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                            let addr = addr as u32;
+                            let value = self.memory.load(*offset, addr, 8)?;
+                            let value = i64::from_le_bytes([
+                                value[0], value[1], value[2], value[3], value[4], value[5],
+                                value[6], value[7],
+                            ]);
+                            self.stack.push(Value::I64(value));
+                        }
                         I32Store => {
                             let value = self.stack.pop().ok_or("expected value")?.as_i32()?;
                             let addr = self.stack.pop().ok_or("expected value")?.as_i32()?;
