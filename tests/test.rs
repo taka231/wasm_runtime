@@ -308,3 +308,8 @@ fn test_br_if() {
 fn test_br_table() {
     test_suite("br_table.wast");
 }
+
+#[test]
+fn test_call() {
+    test_suite("call.wast");
+}
