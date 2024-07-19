@@ -66,6 +66,7 @@ enum Val {
     I64 { value: Option<String> },
     F32 { value: Option<String> },
     F64 { value: Option<String> },
+    Externref { value: Option<String> },
 }
 
 fn test_suite(file_path: &str) {
@@ -127,6 +128,9 @@ fn test_suite(file_path: &str) {
                                         Value::F64(f64::from_bits(value.parse::<u64>().unwrap()))
                                     }
                                 }
+                                Val::Externref { value } => {
+                                    Value::ExternRef(value.unwrap().parse::<usize>().unwrap())
+                                }
                             })
                             .collect();
                         runtime.as_mut().unwrap().call_with_name(&field, args)
@@ -161,6 +165,9 @@ fn test_suite(file_path: &str) {
                             } else {
                                 Value::F64(f64::from_bits(value.parse::<u64>().unwrap()))
                             }
+                        }
+                        Val::Externref { value } => {
+                            Value::ExternRef(value.unwrap().parse::<usize>().unwrap())
                         }
                     })
                     .collect());
@@ -295,4 +302,9 @@ fn test_br() {
 #[test]
 fn test_br_if() {
     test_suite("br_if.wast");
+}
+
+#[test]
+fn test_br_table() {
+    test_suite("br_table.wast");
 }
