@@ -353,3 +353,8 @@ fn test_endianness() {
 fn test_align() {
     test_suite("align.wast");
 }
+
+#[test]
+fn test_left_to_right() {
+    test_suite("left-to-right.wast");
+}
