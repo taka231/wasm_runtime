@@ -328,3 +328,8 @@ fn test_return() {
 fn test_loop() {
     test_suite("loop.wast");
 }
+
+#[test]
+fn test_load() {
+    test_suite("load.wast");
+}

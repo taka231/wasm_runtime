@@ -56,7 +56,7 @@ impl Memory {
         if addr + size > self.data.len() {
             return Err("Out of memory".to_string());
         }
-        self.data[addr..addr + size].copy_from_slice(value);
+        self.data[addr..addr + size].copy_from_slice(&value[0..size]);
         Ok(())
     }
     fn load(&self, offset: u32, index: u32, size: u32) -> Result<&[u8], String> {
