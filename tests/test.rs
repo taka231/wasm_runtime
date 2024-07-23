@@ -333,3 +333,18 @@ fn test_loop() {
 fn test_load() {
     test_suite("load.wast");
 }
+
+#[test]
+fn test_local_tee() {
+    test_suite("local_tee.wast");
+}
+
+#[test]
+fn test_func() {
+    test_suite("func.wast");
+}
+
+#[test]
+fn test_endianness() {
+    test_suite("endianness.wast");
+}
