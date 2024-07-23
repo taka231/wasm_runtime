@@ -358,3 +358,8 @@ fn test_align() {
 fn test_left_to_right() {
     test_suite("left-to-right.wast");
 }
+
+#[test]
+fn test_unwind() {
+    test_suite("unwind.wast");
+}
