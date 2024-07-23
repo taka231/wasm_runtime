@@ -618,7 +618,10 @@ impl Runtime {
                         }
                         _ => Err("Invalid table type")?,
                     };
-                    if self.func_types.as_ref().unwrap()[funcidx] != typeidx {
+                    let func_type = &self.types[typeidx as usize];
+                    let called_func_type =
+                        &self.types[self.func_types.as_ref().unwrap()[funcidx] as usize];
+                    if func_type != called_func_type {
                         Err("Function type mismatch")?;
                     }
                     self.frames.push(frame);

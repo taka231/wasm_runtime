@@ -164,7 +164,7 @@ impl BlockType {
 
 pub type ResultType = Vec<ValType>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FuncType {
     pub params: ResultType,
     pub results: ResultType,
