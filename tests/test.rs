@@ -348,3 +348,8 @@ fn test_func() {
 fn test_endianness() {
     test_suite("endianness.wast");
 }
+
+#[test]
+fn test_align() {
+    test_suite("align.wast");
+}

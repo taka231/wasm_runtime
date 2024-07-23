@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::wasm::{
-    ExportDesc, Func, FuncType, ImportDesc, Instr, Locals, Memarg, Mode, Opcode, RefType, Section,
-    SectionContent, TruncSatOp, TypeIdx, ValType,
+    ExportDesc, Func, FuncType, ImportDesc, Instr, Limits, Locals, Memarg, Mode, Opcode, RefType,
+    Section, SectionContent, TruncSatOp, TypeIdx, ValType,
 };
 
 #[derive(Debug)]
@@ -49,6 +49,13 @@ pub struct Memory {
 }
 
 impl Memory {
+    fn new(limit: &Limits) -> Memory {
+        Memory {
+            data: vec![0; Self::PAGE_SIZE * limit.min as usize],
+            max: limit.max,
+        }
+    }
+    const PAGE_SIZE: usize = 65536;
     fn store(&mut self, offset: u32, index: u32, size: u32, value: &[u8]) -> Result<(), String> {
         let addr = offset + index;
         let addr = addr as usize;
@@ -190,8 +197,7 @@ impl Runtime {
             } else if let SectionContent::Export(export_map) = section.content {
                 exports = Some(export_map);
             } else if let SectionContent::Memory(limits) = section.content {
-                memory.data = vec![0; 8192 * limits[0].min as usize];
-                memory.max = limits[0].max;
+                memory = Memory::new(&limits[0]);
             } else if let SectionContent::Table(table_types) = section.content {
                 for table_type in table_types {
                     let table = match table_type.elem_type {
@@ -643,7 +649,7 @@ impl Runtime {
                 }
                 Instr::MemoryGrow => {
                     let grow_size = self.stack.pop().ok_or("expected value")?.as_i32()?;
-                    let current_size = self.memory.data.len() / 8192;
+                    let current_size = self.memory.data.len() / Memory::PAGE_SIZE;
                     let new_size = current_size + grow_size as usize;
                     if let Some(max) = self.memory.max {
                         if new_size > max as usize {
@@ -651,7 +657,7 @@ impl Runtime {
                             continue;
                         }
                     }
-                    self.memory.data.resize(new_size * 8192, 0);
+                    self.memory.data.resize(new_size * Memory::PAGE_SIZE, 0);
                     self.stack.push(Value::I32(current_size as i32));
                 }
                 Instr::Ibinop(op) => {
