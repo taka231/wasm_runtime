@@ -318,3 +318,13 @@ fn test_call() {
 fn test_call_indirect() {
     test_suite("call_indirect.wast");
 }
+
+#[test]
+fn test_return() {
+    test_suite("return.wast");
+}
+
+#[test]
+fn test_loop() {
+    test_suite("loop.wast");
+}
