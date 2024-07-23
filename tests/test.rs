@@ -313,3 +313,8 @@ fn test_br_table() {
 fn test_call() {
     test_suite("call.wast");
 }
+
+#[test]
+fn test_call_indirect() {
+    test_suite("call_indirect.wast");
+}

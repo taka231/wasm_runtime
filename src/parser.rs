@@ -237,7 +237,27 @@ impl<'a> Parser<'a> {
                     funcidxs,
                 })
             }
-            1 | 2 | 3 | 4 | 5 | 6 | 7 => unimplemented!(),
+            2 => {
+                let tableidx = self.parse_leb128_u32()?;
+                let offset = self.parse_expr()?;
+                let byte = self.next_byte().map_err(|_| "expected byte")?;
+                if byte != 0x00 {
+                    return Err("Invalid elem kind".to_string());
+                }
+                let count = self.parse_leb128_u32()?;
+                let mut funcidxs = Vec::new();
+                for _ in 0..count {
+                    let funcidx = self.parse_leb128_u32()?;
+                    funcidxs.push(funcidx);
+                }
+                Ok(Element {
+                    ref_type: RefType::FuncRef,
+                    mode: Mode::Active { tableidx, offset },
+                    expr: vec![],
+                    funcidxs,
+                })
+            }
+            1 | 3 | 4 | 5 | 6 | 7 => unimplemented!("{}", kind),
             _ => Err("Invalid element kind".to_string()),
         }
     }
