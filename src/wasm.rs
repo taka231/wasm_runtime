@@ -218,6 +218,9 @@ pub enum Instr {
     Frelop(Opcode),
     Cutop(Opcode),
     TruncSat(TruncSatOp),
+    RefNull(RefType),
+    RefIsNull,
+    RefFunc(u32),
 }
 
 #[derive(Debug, Clone)]
@@ -433,6 +436,9 @@ enum_try_from_int! {
         I64Extend8S = 0xc2,
         I64Extend16S = 0xc3,
         I64Extend32S = 0xc4,
+        RefNull = 0xd0,
+        RefIsNull = 0xd1,
+        RefFunc = 0xd2,
         TruncSat = 0xfc,
     }
 }

@@ -5,6 +5,7 @@ use wasm_runtime::{
     self,
     parser::Parser,
     runtime::{Runtime, Value},
+    wasm::RefType,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -67,6 +68,7 @@ enum Val {
     F32 { value: Option<String> },
     F64 { value: Option<String> },
     Externref { value: Option<String> },
+    Funcref { value: Option<String> },
 }
 
 fn test_suite(file_path: &str) {
@@ -131,6 +133,9 @@ fn test_suite(file_path: &str) {
                                 Val::Externref { value } => {
                                     Value::ExternRef(value.unwrap().parse::<usize>().unwrap())
                                 }
+                                Val::Funcref { value } => {
+                                    Value::FuncRef(value.unwrap().parse::<usize>().unwrap())
+                                }
                             })
                             .collect();
                         runtime.as_mut().unwrap().call_with_name(&field, args)
@@ -167,7 +172,18 @@ fn test_suite(file_path: &str) {
                             }
                         }
                         Val::Externref { value } => {
-                            Value::ExternRef(value.unwrap().parse::<usize>().unwrap())
+                            if value == Some("null".to_string()) {
+                                Value::RefNull(RefType::ExternRef)
+                            } else {
+                                Value::ExternRef(value.unwrap().parse::<usize>().unwrap())
+                            }
+                        }
+                        Val::Funcref { value } => {
+                            if value == Some("null".to_string()) {
+                                Value::RefNull(RefType::FuncRef)
+                            } else {
+                                Value::FuncRef(value.unwrap().parse::<usize>().unwrap())
+                            }
                         }
                     })
                     .collect());
@@ -362,4 +378,9 @@ fn test_left_to_right() {
 #[test]
 fn test_unwind() {
     test_suite("unwind.wast");
+}
+
+#[test]
+fn test_ref_null() {
+    test_suite("ref_null.wast");
 }

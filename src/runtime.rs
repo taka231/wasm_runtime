@@ -83,7 +83,9 @@ pub enum Value {
     I64(i64),
     F32(f32),
     F64(f64),
+    RefNull(RefType),
     ExternRef(usize),
+    FuncRef(usize),
 }
 
 impl Value {
@@ -238,6 +240,8 @@ impl Runtime {
                         Instr::I64Const(n) => Value::I64(n),
                         Instr::F32Const(f) => Value::F32(f),
                         Instr::F64Const(f) => Value::F64(f),
+                        Instr::RefNull(ref_type) => Value::RefNull(ref_type),
+                        Instr::RefFunc(funcidx) => Value::FuncRef(funcidx as usize),
                         _ => unimplemented!(),
                     };
                     let global = Global {
@@ -959,6 +963,21 @@ impl Runtime {
                         }
                     };
                     self.stack.push(result);
+                }
+                Instr::RefNull(ref_type) => {
+                    self.stack.push(Value::RefNull(ref_type.clone()));
+                }
+                Instr::RefIsNull => {
+                    let value = self.stack.pop().ok_or("expected value")?;
+                    let result = match value {
+                        Value::RefNull(_) => 1,
+                        _ => 0,
+                    };
+                    self.stack.push(Value::I32(result));
+                }
+                Instr::RefFunc(funcidx) => {
+                    let funcidx = *funcidx as usize;
+                    self.stack.push(Value::FuncRef(funcidx));
                 }
             }
             frame.pc += 1;

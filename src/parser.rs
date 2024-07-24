@@ -495,6 +495,15 @@ impl<'a> Parser<'a> {
                 }
                 Ok(Instr::MemoryGrow)
             }
+            Opcode::RefNull => {
+                let reftype = self.parse_reftype()?;
+                Ok(Instr::RefNull(reftype))
+            }
+            Opcode::RefIsNull => Ok(Instr::RefIsNull),
+            Opcode::RefFunc => {
+                let funcidx = self.parse_leb128_u32()?;
+                Ok(Instr::RefFunc(funcidx))
+            }
             op => {
                 if op.is_memory_instr_with_memarg() {
                     let align = self.parse_leb128_u32()?;
