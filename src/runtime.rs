@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::wasm::{
-    ExportDesc, Func, FuncType, ImportDesc, Instr, Limits, Locals, Memarg, Mode, Opcode, RefType,
-    Section, SectionContent, TruncSatOp, TypeIdx, ValType,
+    Data, ExportDesc, Func, FuncType, ImportDesc, Instr, Limits, Locals, Memarg, Mode, Opcode,
+    RefType, Section, SectionContent, TruncSatOp, TypeIdx, ValType,
 };
 
 #[derive(Debug)]
@@ -249,6 +249,28 @@ impl Runtime {
                         mutable: global.is_mutable,
                     };
                     globals.push(global);
+                }
+            } else if let SectionContent::Data(data) = section.content {
+                for data in data {
+                    match data {
+                        Data::Active {
+                            memidx,
+                            offset,
+                            data,
+                        } => {
+                            if memidx != 0 {
+                                panic!("Invalid memory index");
+                            }
+                            let offset = match offset[0] {
+                                Instr::I32Const(n) => n as u32,
+                                Instr::I64Const(n) => n as u32,
+                                _ => unimplemented!(),
+                            };
+                            let addr = offset as usize;
+                            memory.data[addr..addr + data.len()].copy_from_slice(&data);
+                        }
+                        Data::Passive { data: _ } => todo!(),
+                    }
                 }
             }
         }

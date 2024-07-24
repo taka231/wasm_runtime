@@ -18,8 +18,20 @@ pub enum SectionContent {
     Start,
     Element(Vec<Element>),
     Code(Vec<Func>),
-    Data,
+    Data(Vec<Data>),
     DataCount,
+}
+
+#[derive(Debug, Clone)]
+pub enum Data {
+    Active {
+        memidx: u32,
+        offset: Vec<Instr>,
+        data: Vec<u8>,
+    },
+    Passive {
+        data: Vec<u8>,
+    },
 }
 
 #[derive(Debug, Clone)]

@@ -384,3 +384,8 @@ fn test_unwind() {
 fn test_ref_null() {
     test_suite("ref_null.wast");
 }
+
+#[test]
+fn test_address() {
+    test_suite("address.wast");
+}

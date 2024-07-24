@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::wasm::{
-    BlockType, Element, ExportDesc, Func, FuncType, Global, ImportDesc, Instr, Limits, Locals,
-    Memarg, Mode, Opcode, RefType, ResultType, Section, SectionContent, TableType, ValType,
+    BlockType, Data, Element, ExportDesc, Func, FuncType, Global, ImportDesc, Instr, Limits,
+    Locals, Memarg, Mode, Opcode, RefType, ResultType, Section, SectionContent, TableType, ValType,
 };
 
 #[derive(Debug)]
@@ -533,8 +533,53 @@ impl<'a> Parser<'a> {
     }
     fn parse_data(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
-        self.pos = skip_pos;
-        Ok(SectionContent::Data)
+        let count = self.parse_leb128_u32()?;
+        let mut data = Vec::new();
+        for _ in 0..count {
+            let tag = self.next_byte().map_err(|_| "expected byte")?;
+            if tag == 0 {
+                let offset = self.parse_expr()?;
+                let size = self.parse_leb128_u32()?;
+                let bytes = self
+                    .bytes
+                    .get(self.pos..self.pos + size as usize)
+                    .ok_or("expected bytes")?;
+                self.pos += size as usize;
+                data.push(Data::Active {
+                    memidx: 0,
+                    offset,
+                    data: bytes.to_vec(),
+                });
+            } else if tag == 1 {
+                let size = self.parse_leb128_u32()?;
+                let bytes = self
+                    .bytes
+                    .get(self.pos..self.pos + size as usize)
+                    .ok_or("expected bytes")?;
+                self.pos += size as usize;
+                data.push(Data::Passive {
+                    data: bytes.to_vec(),
+                });
+            } else if tag == 2 {
+                let memidx = self.parse_leb128_u32()?;
+                let offset = self.parse_expr()?;
+                let size = self.parse_leb128_u32()?;
+                let bytes = self
+                    .bytes
+                    .get(self.pos..self.pos + size as usize)
+                    .ok_or("expected bytes")?;
+                self.pos += size as usize;
+                data.push(Data::Active {
+                    memidx,
+                    offset,
+                    data: bytes.to_vec(),
+                });
+            } else {
+                return Err("Invalid data tag".to_string());
+            }
+        }
+        self.ensure_section_end(skip_pos)?;
+        Ok(SectionContent::Data(data))
     }
     fn parse_data_count(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
