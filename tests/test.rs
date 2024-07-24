@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use wasm_runtime::{
     self,
     parser::Parser,
-    runtime::{Runtime, Value},
+    runtime::{value::Value, Runtime},
     wasm::RefType,
 };
 
