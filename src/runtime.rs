@@ -558,216 +558,35 @@ impl Runtime {
                 Instr::Ibinop(op) => {
                     let b = self.stack.pop().ok_or("expected value")?;
                     let a = self.stack.pop().ok_or("expected value")?;
-                    use Opcode::*;
-                    let result = match op {
-                        I32Add => (a.as_i32()?.wrapping_add(b.as_i32()?)).into(),
-                        I32Sub => (a.as_i32()?.wrapping_sub(b.as_i32()?)).into(),
-                        I32Mul => (a.as_i32()?.wrapping_mul(b.as_i32()?)).into(),
-                        I32DivS => (a.as_i32()?.wrapping_div(b.as_i32()?)).into(),
-                        I32DivU => {
-                            (((a.as_i32()? as u32).wrapping_div(b.as_i32()? as u32)) as i32).into()
-                        }
-                        I32RemS => (a.as_i32()?.wrapping_rem(b.as_i32()?)).into(),
-                        I32RemU => {
-                            (((a.as_i32()? as u32).wrapping_rem(b.as_i32()? as u32)) as i32).into()
-                        }
-                        I32And => (a.as_i32()? & b.as_i32()?).into(),
-                        I32Or => (a.as_i32()? | b.as_i32()?).into(),
-                        I32Xor => (a.as_i32()? ^ b.as_i32()?).into(),
-                        I32Shl => (a.as_i32()?.wrapping_shl(b.as_i32()? as u32)).into(),
-                        I32ShrS => (a.as_i32()?.wrapping_shr(b.as_i32()? as u32)).into(),
-                        I32ShrU => {
-                            (((a.as_i32()? as u32).wrapping_shr(b.as_i32()? as u32)) as i32).into()
-                        }
-                        I32Rotl => {
-                            let a = a.as_i32()? as u32;
-                            let b = b.as_i32()? as u32;
-                            let b = b % 32;
-                            (((a.wrapping_shl(b)) | (a.wrapping_shr(32 - b))) as i32).into()
-                        }
-                        I32Rotr => {
-                            let a = a.as_i32()? as u32;
-                            let b = b.as_i32()? as u32;
-                            let b = b % 32;
-                            (((a.wrapping_shr(b)) | (a.wrapping_shl(32 - b))) as i32).into()
-                        }
-                        I64Add => (a.as_i64()?.wrapping_add(b.as_i64()?)).into(),
-                        I64Sub => (a.as_i64()?.wrapping_sub(b.as_i64()?)).into(),
-                        I64Mul => (a.as_i64()?.wrapping_mul(b.as_i64()?)).into(),
-                        I64DivS => (a.as_i64()?.wrapping_div(b.as_i64()?)).into(),
-                        I64DivU => {
-                            (((a.as_i64()? as u64).wrapping_div(b.as_i64()? as u64)) as i64).into()
-                        }
-                        I64RemS => (a.as_i64()?.wrapping_rem(b.as_i64()?)).into(),
-                        I64RemU => {
-                            (((a.as_i64()? as u64).wrapping_rem(b.as_i64()? as u64)) as i64).into()
-                        }
-                        I64And => (a.as_i64()? & b.as_i64()?).into(),
-                        I64Or => (a.as_i64()? | b.as_i64()?).into(),
-                        I64Xor => (a.as_i64()? ^ b.as_i64()?).into(),
-                        I64Shl => (a.as_i64()?.wrapping_shl(b.as_i64()? as u32)).into(),
-                        I64ShrS => (a.as_i64()?.wrapping_shr(b.as_i64()? as u32)).into(),
-                        I64ShrU => {
-                            (((a.as_i64()? as u64).wrapping_shr(b.as_i64()? as u32)) as i64).into()
-                        }
-                        I64Rotl => {
-                            let a = a.as_i64()? as u64;
-                            let b = b.as_i64()? as u32;
-                            let b = b % 64;
-                            (((a.wrapping_shl(b)) | (a.wrapping_shr(64 - b))) as i64).into()
-                        }
-                        I64Rotr => {
-                            let a = a.as_i64()? as u64;
-                            let b = b.as_i64()? as u32;
-                            let b = b % 64;
-                            (((a.wrapping_shr(b)) | (a.wrapping_shl(64 - b))) as i64).into()
-                        }
-                        _ => unreachable!("opcode {:?} is not a ibinop", op),
-                    };
+                    let result = Self::exec_ibinop(op, a, b)?;
                     self.stack.push(result);
                 }
                 Instr::Funop(op) => {
                     let a = self.stack.pop().ok_or("expected value")?;
-                    use Opcode::*;
-                    let result = match op {
-                        F32Abs => a.as_f32()?.abs().into(),
-                        F32Neg => (-a.as_f32()?).into(),
-                        F32Ceil => a.as_f32()?.ceil().into(),
-                        F32Floor => a.as_f32()?.floor().into(),
-                        F32Trunc => a.as_f32()?.trunc().into(),
-                        F32Nearest => a.as_f32()?.round_ties_even().into(),
-                        F32Sqrt => a.as_f32()?.sqrt().into(),
-                        F64Abs => a.as_f64()?.abs().into(),
-                        F64Neg => (-a.as_f64()?).into(),
-                        F64Ceil => a.as_f64()?.ceil().into(),
-                        F64Floor => a.as_f64()?.floor().into(),
-                        F64Trunc => a.as_f64()?.trunc().into(),
-                        F64Nearest => a.as_f64()?.round_ties_even().into(),
-                        F64Sqrt => a.as_f64()?.sqrt().into(),
-                        _ => unreachable!("opcode {:?} is not a funop", op),
-                    };
+                    let result = Self::exec_funop(op, a)?;
                     self.stack.push(result);
                 }
                 Instr::Fbinop(op) => {
                     let b = self.stack.pop().ok_or("expected value")?;
                     let a = self.stack.pop().ok_or("expected value")?;
-                    use Opcode::*;
-                    let result = match op {
-                        F32Add => (a.as_f32()? + b.as_f32()?).into(),
-                        F32Sub => (a.as_f32()? - b.as_f32()?).into(),
-                        F32Mul => (a.as_f32()? * b.as_f32()?).into(),
-                        F32Div => (a.as_f32()? / b.as_f32()?).into(),
-                        F32Min => {
-                            let a = a.as_f32()?;
-                            let b = b.as_f32()?;
-                            if a.is_nan() || b.is_nan() {
-                                f32::NAN
-                            } else {
-                                a.min(b)
-                            }
-                            .into()
-                        }
-                        F32Max => {
-                            let a = a.as_f32()?;
-                            let b = b.as_f32()?;
-                            if a.is_nan() || b.is_nan() {
-                                f32::NAN
-                            } else {
-                                a.max(b)
-                            }
-                            .into()
-                        }
-                        F32Copysign => a.as_f32()?.copysign(b.as_f32()?).into(),
-                        F64Add => (a.as_f64()? + b.as_f64()?).into(),
-                        F64Sub => (a.as_f64()? - b.as_f64()?).into(),
-                        F64Mul => (a.as_f64()? * b.as_f64()?).into(),
-                        F64Div => (a.as_f64()? / b.as_f64()?).into(),
-                        F64Min => {
-                            let a = a.as_f64()?;
-                            let b = b.as_f64()?;
-                            if a.is_nan() || b.is_nan() {
-                                f64::NAN
-                            } else {
-                                a.min(b)
-                            }
-                            .into()
-                        }
-                        F64Max => {
-                            let a = a.as_f64()?;
-                            let b = b.as_f64()?;
-                            if a.is_nan() || b.is_nan() {
-                                f64::NAN
-                            } else {
-                                a.max(b)
-                            }
-                            .into()
-                        }
-                        F64Copysign => a.as_f64()?.copysign(b.as_f64()?).into(),
-                        _ => unreachable!("opcode {:?} is not a fbinop", op),
-                    };
+                    let result = Self::exec_fbinop(op, a, b)?;
                     self.stack.push(result);
                 }
                 Instr::Frelop(op) => {
                     let b = self.stack.pop().ok_or("expected value")?;
                     let a = self.stack.pop().ok_or("expected value")?;
-                    use Opcode::*;
-                    let result = match op {
-                        F32Eq => ((a.as_f32()? == b.as_f32()?) as i32).into(),
-                        F32Ne => ((a.as_f32()? != b.as_f32()?) as i32).into(),
-                        F32Lt => ((a.as_f32()? < b.as_f32()?) as i32).into(),
-                        F32Gt => ((a.as_f32()? > b.as_f32()?) as i32).into(),
-                        F32Le => ((a.as_f32()? <= b.as_f32()?) as i32).into(),
-                        F32Ge => ((a.as_f32()? >= b.as_f32()?) as i32).into(),
-                        F64Eq => ((a.as_f64()? == b.as_f64()?) as i32).into(),
-                        F64Ne => ((a.as_f64()? != b.as_f64()?) as i32).into(),
-                        F64Lt => ((a.as_f64()? < b.as_f64()?) as i32).into(),
-                        F64Gt => ((a.as_f64()? > b.as_f64()?) as i32).into(),
-                        F64Le => ((a.as_f64()? <= b.as_f64()?) as i32).into(),
-                        F64Ge => ((a.as_f64()? >= b.as_f64()?) as i32).into(),
-                        _ => unreachable!("opcode {:?} is not a frelop", op),
-                    };
+                    let result = Self::exec_frelop(op, a, b)?;
                     self.stack.push(result);
                 }
                 Instr::Irelop(op) => {
                     let b = self.stack.pop().ok_or("expected value")?;
                     let a = self.stack.pop().ok_or("expected value")?;
-                    use Opcode::*;
-                    let result = match op {
-                        I32Eq => ((a.as_i32()? == b.as_i32()?) as i32).into(),
-                        I32Ne => ((a.as_i32()? != b.as_i32()?) as i32).into(),
-                        I32LtS => ((a.as_i32()? < b.as_i32()?) as i32).into(),
-                        I32LtU => (((a.as_i32()? as u32) < (b.as_i32()? as u32)) as i32).into(),
-                        I32GtS => ((a.as_i32()? > b.as_i32()?) as i32).into(),
-                        I32GtU => (((a.as_i32()? as u32) > (b.as_i32()? as u32)) as i32).into(),
-                        I32LeS => ((a.as_i32()? <= b.as_i32()?) as i32).into(),
-                        I32LeU => (((a.as_i32()? as u32) <= (b.as_i32()? as u32)) as i32).into(),
-                        I32GeS => ((a.as_i32()? >= b.as_i32()?) as i32).into(),
-                        I32GeU => (((a.as_i32()? as u32) >= (b.as_i32()? as u32)) as i32).into(),
-                        I64Eq => ((a.as_i64()? == b.as_i64()?) as i32).into(),
-                        I64Ne => ((a.as_i64()? != b.as_i64()?) as i32).into(),
-                        I64LtS => ((a.as_i64()? < b.as_i64()?) as i32).into(),
-                        I64LtU => (((a.as_i64()? as u64) < (b.as_i64()? as u64)) as i32).into(),
-                        I64GtS => ((a.as_i64()? > b.as_i64()?) as i32).into(),
-                        I64GtU => (((a.as_i64()? as u64) > (b.as_i64()? as u64)) as i32).into(),
-                        I64LeS => ((a.as_i64()? <= b.as_i64()?) as i32).into(),
-                        I64LeU => (((a.as_i64()? as u64) <= (b.as_i64()? as u64)) as i32).into(),
-                        I64GeS => ((a.as_i64()? >= b.as_i64()?) as i32).into(),
-                        I64GeU => (((a.as_i64()? as u64) >= (b.as_i64()? as u64)) as i32).into(),
-                        _ => unreachable!("opcode {:?} is not a relop", op),
-                    };
+                    let result = Self::exec_irelop(op, a, b)?;
                     self.stack.push(result);
                 }
                 Instr::Iunop(op) => {
                     let a = self.stack.pop().ok_or("expected value")?;
-                    let result = match op {
-                        Opcode::I32Clz => (a.as_i32()?.leading_zeros() as i32).into(),
-                        Opcode::I32Ctz => (a.as_i32()?.trailing_zeros() as i32).into(),
-                        Opcode::I32Popcnt => (a.as_i32()?.count_ones() as i32).into(),
-                        Opcode::I64Clz => (a.as_i64()?.leading_zeros() as i64).into(),
-                        Opcode::I64Ctz => (a.as_i64()?.trailing_zeros() as i64).into(),
-                        Opcode::I64Popcnt => (a.as_i64()?.count_ones() as i64).into(),
-                        _ => unreachable!("opcode {:?} is not a unop", op),
-                    };
+                    let result = Self::exec_iunop(op, a)?;
                     self.stack.push(result);
                 }
                 Instr::Itestop(op) => {
@@ -781,78 +600,12 @@ impl Runtime {
                 }
                 Instr::Cutop(op) => {
                     let a = self.stack.pop().ok_or("expected value")?;
-                    use Opcode::*;
-                    let result = match op {
-                        I32Extend8S => (a.as_i32()? as i8 as i32).into(),
-                        I32Extend16S => (a.as_i32()? as i16 as i32).into(),
-                        I64Extend8S => (a.as_i64()? as i8 as i64).into(),
-                        I64Extend16S => (a.as_i64()? as i16 as i64).into(),
-                        I64Extend32S => (a.as_i64()? as i32 as i64).into(),
-                        I32WrapI64 => (a.as_i64()? as i32).into(),
-                        I64ExtendI32S => (a.as_i32()? as i64).into(),
-                        I64ExtendI32U => (a.as_i32()? as u32 as i64).into(),
-                        I32TruncF32S => (a.as_f32()?.trunc() as i32).into(),
-                        I32TruncF32U => (a.as_f32()?.trunc() as u32 as i32).into(),
-                        I32TruncF64S => (a.as_f64()?.trunc() as i32).into(),
-                        I32TruncF64U => (a.as_f64()?.trunc() as u32 as i32).into(),
-                        I64TruncF32S => (a.as_f32()?.trunc() as i64).into(),
-                        I64TruncF32U => (a.as_f32()?.trunc() as u64 as i64).into(),
-                        I64TruncF64S => (a.as_f64()?.trunc() as i64).into(),
-                        I64TruncF64U => (a.as_f64()?.trunc() as u64 as i64).into(),
-                        F32ConvertI32S => (a.as_i32()? as f32).into(),
-                        F32ConvertI32U => (a.as_i32()? as u32 as f32).into(),
-                        F32ConvertI64S => (a.as_i64()? as f32).into(),
-                        F32ConvertI64U => (a.as_i64()? as u64 as f32).into(),
-                        F32DemoteF64 => (a.as_f64()? as f32).into(),
-                        F64ConvertI32S => (a.as_i32()? as f64).into(),
-                        F64ConvertI32U => (a.as_i32()? as u32 as f64).into(),
-                        F64ConvertI64S => (a.as_i64()? as f64).into(),
-                        F64ConvertI64U => (a.as_i64()? as u64 as f64).into(),
-                        F64PromoteF32 => (a.as_f32()? as f64).into(),
-                        I32ReinterpretF32 => (a.as_f32()?.to_bits() as i32).into(),
-                        I64ReinterpretF64 => (a.as_f64()?.to_bits() as i64).into(),
-                        F32ReinterpretI32 => (f32::from_bits(a.as_i32()? as u32)).into(),
-                        F64ReinterpretI64 => (f64::from_bits(a.as_i64()? as u64)).into(),
-                        _ => unreachable!("opcode {:?} is not a cutop", op),
-                    };
+                    let result = Self::exec_cutop(op, a)?;
                     self.stack.push(result);
                 }
                 Instr::TruncSat(op) => {
                     let a = self.stack.pop().ok_or("expected value")?;
-                    use TruncSatOp::*;
-                    let result = if a.is_nan() {
-                        match op {
-                            I32TruncSatF32S | I32TruncSatF32U | I32TruncSatF64S
-                            | I32TruncSatF64U => Value::I32(0),
-                            I64TruncSatF32S | I64TruncSatF32U | I64TruncSatF64S
-                            | I64TruncSatF64U => Value::I64(0),
-                        }
-                    } else if a.is_pos_inf() {
-                        match op {
-                            I32TruncSatF32S | I32TruncSatF64S => Value::I32(i32::MAX),
-                            I32TruncSatF32U | I32TruncSatF64U => Value::I32(u32::MAX as i32),
-                            I64TruncSatF32S | I64TruncSatF64S => Value::I64(i64::MAX),
-                            I64TruncSatF32U | I64TruncSatF64U => Value::I64(u64::MAX as i64),
-                        }
-                    } else if a.is_neg_inf() {
-                        match op {
-                            I32TruncSatF32S | I32TruncSatF64S => Value::I32(i32::MIN),
-                            I32TruncSatF32U | I32TruncSatF64U => Value::I32(0),
-                            I64TruncSatF32S | I64TruncSatF64S => Value::I64(i64::MIN),
-                            I64TruncSatF32U | I64TruncSatF64U => Value::I64(0),
-                        }
-                    } else {
-                        match op {
-                            I32TruncSatF32S => Value::I32(a.as_f32()?.trunc() as i32),
-                            I32TruncSatF32U => Value::I32(a.as_f32()?.trunc() as u32 as i32),
-                            I32TruncSatF64S => Value::I32(a.as_f64()?.trunc() as i32),
-                            I32TruncSatF64U => Value::I32(a.as_f64()?.trunc() as u32 as i32),
-                            I64TruncSatF32S => Value::I64(a.as_f32()?.trunc() as i64),
-                            I64TruncSatF32U => Value::I64(a.as_f32()?.trunc() as u64 as i64),
-                            I64TruncSatF64S => Value::I64(a.as_f64()?.trunc() as i64),
-                            I64TruncSatF64U => Value::I64(a.as_f64()?.trunc() as u64 as i64),
-                        }
-                    };
+                    let result = Self::exec_trunc_sat(op, a)?;
                     self.stack.push(result);
                 }
                 Instr::RefNull(ref_type) => {
