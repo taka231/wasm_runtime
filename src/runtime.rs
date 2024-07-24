@@ -183,95 +183,106 @@ impl Runtime {
         let mut tables = Vec::new();
         let mut globals = Vec::new();
         for section in sections {
-            if let SectionContent::Code(funcs) = section.content {
-                codes = Some(funcs);
-            } else if let SectionContent::Function(functypes) = section.content {
-                func_types = Some(functypes);
-            } else if let SectionContent::Type(func_types) = section.content {
-                types = Some(func_types);
-            } else if let SectionContent::Import {
-                import_map,
-                import_func_count,
-            } = section.content
-            {
-                imports = Some(import_map);
-                func_offset = import_func_count;
-            } else if let SectionContent::Export(export_map) = section.content {
-                exports = Some(export_map);
-            } else if let SectionContent::Memory(limits) = section.content {
-                memory = Memory::new(&limits[0]);
-            } else if let SectionContent::Table(table_types) = section.content {
-                for table_type in table_types {
-                    let table = match table_type.elem_type {
-                        RefType::FuncRef => {
-                            Table::Funcs(vec![None; table_type.limits.min as usize])
-                        }
-                        RefType::ExternRef => {
-                            Table::Refs(vec![None; table_type.limits.min as usize])
-                        }
-                    };
-                    tables.push(table);
+            match section.content {
+                SectionContent::Code(funcs) => {
+                    codes = Some(funcs);
                 }
-            } else if let SectionContent::Element(elements) = section.content {
-                for element in elements {
-                    if let Mode::Active { tableidx, offset } = element.mode {
-                        if element.ref_type == RefType::FuncRef {
-                            let table = &mut tables[tableidx as usize];
-                            let offset = match offset[0] {
-                                Instr::I32Const(n) => n as usize,
-                                Instr::I64Const(n) => n as usize,
-                                _ => unimplemented!(),
-                            };
-                            match table {
-                                Table::Funcs(funcs) => {
-                                    for (i, funcidx) in element.funcidxs.iter().enumerate() {
-                                        funcs[offset as usize + i] = Some(*funcidx as usize);
+                SectionContent::Function(functypes) => {
+                    func_types = Some(functypes);
+                }
+                SectionContent::Type(func_types) => {
+                    types = Some(func_types);
+                }
+                SectionContent::Import {
+                    import_map,
+                    import_func_count,
+                } => {
+                    imports = Some(import_map);
+                    func_offset = import_func_count;
+                }
+                SectionContent::Export(export_map) => {
+                    exports = Some(export_map);
+                }
+                SectionContent::Memory(limits) => {
+                    memory = Memory::new(&limits[0]);
+                }
+                SectionContent::Table(table_types) => {
+                    for table_type in table_types {
+                        let table = match table_type.elem_type {
+                            RefType::FuncRef => {
+                                Table::Funcs(vec![None; table_type.limits.min as usize])
+                            }
+                            RefType::ExternRef => {
+                                Table::Refs(vec![None; table_type.limits.min as usize])
+                            }
+                        };
+                        tables.push(table);
+                    }
+                }
+                SectionContent::Element(elements) => {
+                    for element in elements {
+                        if let Mode::Active { tableidx, offset } = element.mode {
+                            if element.ref_type == RefType::FuncRef {
+                                let table = &mut tables[tableidx as usize];
+                                let offset = match offset[0] {
+                                    Instr::I32Const(n) => n as usize,
+                                    Instr::I64Const(n) => n as usize,
+                                    _ => unimplemented!(),
+                                };
+                                match table {
+                                    Table::Funcs(funcs) => {
+                                        for (i, funcidx) in element.funcidxs.iter().enumerate() {
+                                            funcs[offset as usize + i] = Some(*funcidx as usize);
+                                        }
                                     }
+                                    _ => panic!("Invalid table type"),
                                 }
-                                _ => panic!("Invalid table type"),
                             }
                         }
                     }
                 }
-            } else if let SectionContent::Global(globals_) = section.content {
-                for global in globals_ {
-                    let value = match global.init[0] {
-                        Instr::I32Const(n) => Value::I32(n),
-                        Instr::I64Const(n) => Value::I64(n),
-                        Instr::F32Const(f) => Value::F32(f),
-                        Instr::F64Const(f) => Value::F64(f),
-                        Instr::RefNull(ref_type) => Value::RefNull(ref_type),
-                        Instr::RefFunc(funcidx) => Value::FuncRef(funcidx as usize),
-                        _ => unimplemented!(),
-                    };
-                    let global = Global {
-                        value,
-                        mutable: global.is_mutable,
-                    };
-                    globals.push(global);
-                }
-            } else if let SectionContent::Data(data) = section.content {
-                for data in data {
-                    match data {
-                        Data::Active {
-                            memidx,
-                            offset,
-                            data,
-                        } => {
-                            if memidx != 0 {
-                                panic!("Invalid memory index");
-                            }
-                            let offset = match offset[0] {
-                                Instr::I32Const(n) => n as u32,
-                                Instr::I64Const(n) => n as u32,
-                                _ => unimplemented!(),
-                            };
-                            let addr = offset as usize;
-                            memory.data[addr..addr + data.len()].copy_from_slice(&data);
-                        }
-                        Data::Passive { data: _ } => todo!(),
+                SectionContent::Global(globals_) => {
+                    for global in globals_ {
+                        let value = match global.init[0] {
+                            Instr::I32Const(n) => Value::I32(n),
+                            Instr::I64Const(n) => Value::I64(n),
+                            Instr::F32Const(f) => Value::F32(f),
+                            Instr::F64Const(f) => Value::F64(f),
+                            Instr::RefNull(ref_type) => Value::RefNull(ref_type),
+                            Instr::RefFunc(funcidx) => Value::FuncRef(funcidx as usize),
+                            _ => unimplemented!(),
+                        };
+                        let global = Global {
+                            value,
+                            mutable: global.is_mutable,
+                        };
+                        globals.push(global);
                     }
                 }
+                SectionContent::Data(data) => {
+                    for data in data {
+                        match data {
+                            Data::Active {
+                                memidx,
+                                offset,
+                                data,
+                            } => {
+                                if memidx != 0 {
+                                    panic!("Invalid memory index");
+                                }
+                                let offset = match offset[0] {
+                                    Instr::I32Const(n) => n as u32,
+                                    Instr::I64Const(n) => n as u32,
+                                    _ => unimplemented!(),
+                                };
+                                let addr = offset as usize;
+                                memory.data[addr..addr + data.len()].copy_from_slice(&data);
+                            }
+                            Data::Passive { data: _ } => todo!(),
+                        }
+                    }
+                }
+                _ => {}
             }
         }
 
