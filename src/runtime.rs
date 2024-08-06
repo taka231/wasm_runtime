@@ -145,10 +145,10 @@ impl Runtime {
                         if let Mode::Active { tableidx, offset } = element.mode {
                             if element.ref_type == RefType::FuncRef {
                                 let table = &mut tables[tableidx as usize];
-                                let offset = match offset[0] {
-                                    Instr::I32Const(n) => n as usize,
-                                    Instr::I64Const(n) => n as usize,
-                                    _ => unimplemented!(),
+                                let offset = match Self::eval_expr(offset).unwrap() {
+                                    Value::I32(n) => n as usize,
+                                    Value::I64(n) => n as usize,
+                                    _ => panic!("Invalid offset type"),
                                 };
                                 match table {
                                     Table::Funcs(funcs) => {
@@ -164,15 +164,7 @@ impl Runtime {
                 }
                 SectionContent::Global(globals_) => {
                     for global in globals_ {
-                        let value = match global.init[0] {
-                            Instr::I32Const(n) => Value::I32(n),
-                            Instr::I64Const(n) => Value::I64(n),
-                            Instr::F32Const(f) => Value::F32(f),
-                            Instr::F64Const(f) => Value::F64(f),
-                            Instr::RefNull(ref_type) => Value::RefNull(ref_type),
-                            Instr::RefFunc(funcidx) => Value::FuncRef(funcidx as usize),
-                            _ => unimplemented!(),
-                        };
+                        let value = Self::eval_expr(global.init).unwrap();
                         let global = Global {
                             value,
                             mutable: global.is_mutable,
@@ -191,10 +183,10 @@ impl Runtime {
                                 if memidx != 0 {
                                     panic!("Invalid memory index");
                                 }
-                                let offset = match offset[0] {
-                                    Instr::I32Const(n) => n as u32,
-                                    Instr::I64Const(n) => n as u32,
-                                    _ => unimplemented!(),
+                                let offset = match Self::eval_expr(offset).unwrap() {
+                                    Value::I32(n) => n as u32,
+                                    Value::I64(n) => n as u32,
+                                    _ => panic!("Invalid offset type"),
                                 };
                                 let addr = offset as usize;
                                 memory.data[addr..addr + data.len()].copy_from_slice(&data);
@@ -223,6 +215,18 @@ impl Runtime {
             func_offset,
             frames: Vec::new(),
         }
+    }
+
+    pub fn eval_expr(instrs: Vec<Instr>) -> Result<Value, String> {
+        Ok(match instrs[0] {
+            Instr::I32Const(n) => Value::I32(n),
+            Instr::I64Const(n) => Value::I64(n),
+            Instr::F32Const(f) => Value::F32(f),
+            Instr::F64Const(f) => Value::F64(f),
+            Instr::RefNull(ref_type) => Value::RefNull(ref_type),
+            Instr::RefFunc(funcidx) => Value::FuncRef(funcidx as usize),
+            _ => unimplemented!(),
+        })
     }
 
     pub fn call_with_name(&mut self, name: &str, args: Vec<Value>) -> Result<Vec<Value>, String> {
