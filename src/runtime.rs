@@ -15,7 +15,7 @@ pub struct Runtime {
     pub stack: Vec<Value>,
     pub codes: Option<Vec<Func>>,
     pub func_types: Option<Vec<TypeIdx>>,
-    pub types: Vec<FuncType>,
+    pub types: Option<Vec<FuncType>>,
     pub imports: Option<HashMap<(String, String), ImportDesc>>,
     pub exports: Option<HashMap<String, ExportDesc>>,
     pub memory: Memory,
@@ -199,14 +199,11 @@ impl Runtime {
             }
         }
 
-        if types.is_none() {
-            panic!("Type section not found");
-        }
         Runtime {
             stack: Vec::new(),
             codes,
             func_types,
-            types: types.unwrap(),
+            types,
             imports,
             exports,
             memory,
@@ -242,10 +239,8 @@ impl Runtime {
             self.stack.push(arg);
         }
         self.call(func_idx)?;
-        let func_type = self
-            .types
-            .get(func_type_idx as usize)
-            .ok_or("Type not found")?;
+        let types = self.types.as_ref().unwrap();
+        let func_type = types.get(func_type_idx as usize).ok_or("Type not found")?;
         let result_num = func_type.results.len();
         let results = self.stack.split_off(self.stack.len() - result_num);
         Ok(results)
@@ -262,6 +257,8 @@ impl Runtime {
         let fun_type_idx = func_types[idx];
         let fun_type = self
             .types
+            .as_ref()
+            .unwrap()
             .get(fun_type_idx as usize)
             .ok_or("Type not found")?;
         let bottom = self.stack.len() - fun_type.params.len();
@@ -338,10 +335,10 @@ impl Runtime {
                     block_type,
                     jump_pc,
                 } => {
-                    let param_num = block_type.count_args(&self.types);
+                    let param_num = block_type.count_args(self.types.as_ref().unwrap());
                     frame.labels.push(Label {
                         sp: self.stack.len() - param_num,
-                        return_num: block_type.count_results(&self.types),
+                        return_num: block_type.count_results(self.types.as_ref().unwrap()),
                         jump_pc: *jump_pc,
                     });
                 }
@@ -349,10 +346,10 @@ impl Runtime {
                     block_type,
                     jump_pc,
                 } => {
-                    let param_num = block_type.count_args(&self.types);
+                    let param_num = block_type.count_args(self.types.as_ref().unwrap());
                     frame.labels.push(Label {
                         sp: self.stack.len() - param_num,
-                        return_num: block_type.count_results(&self.types),
+                        return_num: block_type.count_results(self.types.as_ref().unwrap()),
                         jump_pc: *jump_pc,
                     });
                 }
@@ -361,7 +358,7 @@ impl Runtime {
                     jump_pc,
                 } => {
                     let value = self.stack.pop().ok_or("expected value")?;
-                    let param_num = block_type.count_args(&self.types);
+                    let param_num = block_type.count_args(self.types.as_ref().unwrap());
                     let mut jump_pc = *jump_pc;
                     if value.as_i32()? == 0 {
                         frame.pc = jump_pc;
@@ -374,7 +371,7 @@ impl Runtime {
                     }
                     frame.labels.push(Label {
                         sp: self.stack.len() - param_num,
-                        return_num: block_type.count_results(&self.types),
+                        return_num: block_type.count_results(self.types.as_ref().unwrap()),
                         jump_pc,
                     });
                 }
@@ -442,9 +439,9 @@ impl Runtime {
                         }
                         _ => Err("Invalid table type")?,
                     };
-                    let func_type = &self.types[typeidx as usize];
-                    let called_func_type =
-                        &self.types[self.func_types.as_ref().unwrap()[funcidx] as usize];
+                    let func_type = &self.types.as_ref().unwrap()[typeidx as usize];
+                    let called_func_type = &self.types.as_ref().unwrap()
+                        [self.func_types.as_ref().unwrap()[funcidx] as usize];
                     if func_type != called_func_type {
                         Err("Function type mismatch")?;
                     }
@@ -464,6 +461,10 @@ impl Runtime {
                     } else {
                         self.stack.push(b);
                     }
+                }
+                Instr::MemorySize => {
+                    let current_size = self.memory.data.len() / Memory::PAGE_SIZE;
+                    self.stack.push(Value::I32(current_size as i32));
                 }
                 Instr::MemoryGrow => {
                     let grow_size = self.stack.pop().ok_or("expected value")?.as_i32()?;

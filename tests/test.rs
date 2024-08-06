@@ -389,3 +389,8 @@ fn test_ref_null() {
 fn test_address() {
     test_suite("address.wast");
 }
+
+#[test]
+fn test_memory() {
+    test_suite("memory.wast");
+}
