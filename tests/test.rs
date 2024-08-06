@@ -22,6 +22,11 @@ enum Test {
         line: u32,
         filename: String,
     },
+    Action {
+        line: u32,
+        action: Action,
+        expected: Vec<Val>,
+    },
     AssertReturn {
         line: u32,
         action: Action,
@@ -71,6 +76,49 @@ enum Val {
     Funcref { value: Option<String> },
 }
 
+impl Into<Value> for Val {
+    fn into(self) -> Value {
+        match self {
+            Val::I32 { value } => Value::I32(value.unwrap().parse::<u32>().unwrap() as i32),
+            Val::I64 { value } => Value::I64(value.unwrap().parse::<u64>().unwrap() as i64),
+            Val::F32 { value } => {
+                let value = value.unwrap();
+                if value == "nan:canonical" {
+                    Value::F32(f32::NAN)
+                } else if value == "nan:arithmetic" {
+                    Value::F32(f32::NAN)
+                } else {
+                    Value::F32(f32::from_bits(value.parse::<u32>().unwrap()))
+                }
+            }
+            Val::F64 { value } => {
+                let value = value.unwrap();
+                if value == "nan:canonical" {
+                    Value::F64(f64::NAN)
+                } else if value == "nan:arithmetic" {
+                    Value::F64(f64::NAN)
+                } else {
+                    Value::F64(f64::from_bits(value.parse::<u64>().unwrap()))
+                }
+            }
+            Val::Externref { value } => {
+                if value == Some("null".into()) {
+                    Value::RefNull(RefType::ExternRef)
+                } else {
+                    Value::ExternRef(value.unwrap().parse::<usize>().unwrap())
+                }
+            }
+            Val::Funcref { value } => {
+                if value == Some("null".into()) {
+                    Value::RefNull(RefType::FuncRef)
+                } else {
+                    Value::FuncRef(value.unwrap().parse::<usize>().unwrap())
+                }
+            }
+        }
+    }
+}
+
 fn test_suite(file_path: &str) {
     let temp_dir = tempfile::tempdir().unwrap();
     Command::new("wast2json")
@@ -100,93 +148,12 @@ fn test_suite(file_path: &str) {
             } => {
                 let action = match dbg!(action) {
                     Action::Invoke { field, args } => {
-                        let args = args
-                            .into_iter()
-                            .map(|arg| match arg {
-                                Val::I32 { value } => {
-                                    Value::I32(value.unwrap().parse::<u32>().unwrap() as i32)
-                                }
-                                Val::I64 { value } => {
-                                    Value::I64(value.unwrap().parse::<u64>().unwrap() as i64)
-                                }
-                                Val::F32 { value } => {
-                                    let value = value.unwrap();
-                                    // todo: distinct canonical and arithmetic nan
-                                    if value == "nan:canonical" {
-                                        Value::F32(f32::NAN)
-                                    } else if value == "nan:arithmetic" {
-                                        Value::F32(f32::NAN)
-                                    } else {
-                                        Value::F32(f32::from_bits(value.parse::<u32>().unwrap()))
-                                    }
-                                }
-                                Val::F64 { value } => {
-                                    let value = value.unwrap();
-                                    if value == "nan:canonical" {
-                                        Value::F64(f64::NAN)
-                                    } else if value == "nan:arithmetic" {
-                                        Value::F64(f64::NAN)
-                                    } else {
-                                        Value::F64(f64::from_bits(value.parse::<u64>().unwrap()))
-                                    }
-                                }
-                                Val::Externref { value } => {
-                                    Value::ExternRef(value.unwrap().parse::<usize>().unwrap())
-                                }
-                                Val::Funcref { value } => {
-                                    Value::FuncRef(value.unwrap().parse::<usize>().unwrap())
-                                }
-                            })
-                            .collect();
+                        let args = args.into_iter().map(Into::into).collect();
                         runtime.as_mut().unwrap().call_with_name(&field, args)
                     }
                 };
-                let expected: Result<Vec<Value>, String> = Ok(expected
-                    .into_iter()
-                    .map(|val| match val {
-                        Val::I32 { value } => {
-                            Value::I32(value.unwrap().parse::<u32>().unwrap() as i32)
-                        }
-                        Val::I64 { value } => {
-                            Value::I64(value.unwrap().parse::<u64>().unwrap() as i64)
-                        }
-                        Val::F32 { value } => {
-                            let value = value.unwrap();
-                            if value == "nan:canonical" {
-                                Value::F32(f32::NAN)
-                            } else if value == "nan:arithmetic" {
-                                Value::F32(f32::NAN)
-                            } else {
-                                Value::F32(f32::from_bits(value.parse::<u32>().unwrap()))
-                            }
-                        }
-
-                        Val::F64 { value } => {
-                            let value = value.unwrap();
-                            if value == "nan:canonical" {
-                                Value::F64(f64::NAN)
-                            } else if value == "nan:arithmetic" {
-                                Value::F64(f64::NAN)
-                            } else {
-                                Value::F64(f64::from_bits(value.parse::<u64>().unwrap()))
-                            }
-                        }
-                        Val::Externref { value } => {
-                            if value == Some("null".to_string()) {
-                                Value::RefNull(RefType::ExternRef)
-                            } else {
-                                Value::ExternRef(value.unwrap().parse::<usize>().unwrap())
-                            }
-                        }
-                        Val::Funcref { value } => {
-                            if value == Some("null".to_string()) {
-                                Value::RefNull(RefType::FuncRef)
-                            } else {
-                                Value::FuncRef(value.unwrap().parse::<usize>().unwrap())
-                            }
-                        }
-                    })
-                    .collect());
+                let expected: Result<Vec<Value>, String> =
+                    Ok(expected.into_iter().map(Into::into).collect());
                 for (action, expected) in action.unwrap().iter().zip(expected.unwrap()) {
                     match action {
                         Value::F32(value) if value.is_nan() => {
@@ -201,6 +168,16 @@ fn test_suite(file_path: &str) {
                     }
                 }
             }
+            Test::Action { action, .. } => match action {
+                Action::Invoke { field, args } => {
+                    let args = args.into_iter().map(Into::into).collect();
+                    runtime
+                        .as_mut()
+                        .unwrap()
+                        .call_with_name(&field, args)
+                        .unwrap();
+                }
+            },
             // todo
             Test::AssertTrap { .. } => {}
             Test::AssertInvalid { .. } => {}
@@ -393,4 +370,9 @@ fn test_address() {
 #[test]
 fn test_memory() {
     test_suite("memory.wast");
+}
+
+#[test]
+fn test_memory_redundancy() {
+    test_suite("memory_redundancy.wast");
 }
