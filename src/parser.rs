@@ -483,10 +483,25 @@ impl<'a> Parser<'a> {
                 jump_pc: 0,
             }),
             Opcode::End => Ok(Instr::End),
-            Opcode::TruncSat => {
+            Opcode::ExtendFC => {
                 let num = self.parse_leb128_u32()?;
-                let trunc_sat_op = (num as u8).try_into().map_err(|_| "invalid trunc_sat_op")?;
-                Ok(Instr::TruncSat(trunc_sat_op))
+                match num {
+                    0..=7 => {
+                        let trunc_sat_op = (num as u8).try_into().map_err(|_| "invalid opcode")?;
+                        Ok(Instr::TruncSat(trunc_sat_op))
+                    }
+                    8 => unimplemented!(),
+                    9 => unimplemented!(),
+                    10 => unimplemented!(),
+                    11 => {
+                        let byte = self.next_byte().map_err(|_| "expected byte")?;
+                        if byte != 0x00 {
+                            return Err("Invalid memory fill arg".to_string());
+                        }
+                        Ok(Instr::MemoryFill)
+                    }
+                    _ => Err("Invalid opcode after 0xfc".to_string()),
+                }
             }
             Opcode::MemorySize => {
                 let byte = self.next_byte().map_err(|_| "expected byte")?;

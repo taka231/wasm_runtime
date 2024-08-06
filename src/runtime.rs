@@ -215,6 +215,9 @@ impl Runtime {
     }
 
     pub fn eval_expr(instrs: Vec<Instr>) -> Result<Value, String> {
+        if instrs.len() >= 2 {
+            unimplemented!("expr with more than 1 instr");
+        }
         Ok(match instrs[0] {
             Instr::I32Const(n) => Value::I32(n),
             Instr::I64Const(n) => Value::I64(n),
@@ -478,6 +481,17 @@ impl Runtime {
                     }
                     self.memory.data.resize(new_size * Memory::PAGE_SIZE, 0);
                     self.stack.push(Value::I32(current_size as i32));
+                }
+                Instr::MemoryFill => {
+                    let size = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                    let val = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                    let addr = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                    if addr + size > self.memory.data.len() {
+                        Err("Out of memory")?;
+                    }
+                    if size != 0 {
+                        self.memory.data[addr..addr + size].fill(val as u8);
+                    }
                 }
                 Instr::Ibinop(op) => {
                     let b = self.stack.pop().ok_or("expected value")?;

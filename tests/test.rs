@@ -376,3 +376,8 @@ fn test_memory() {
 fn test_memory_redundancy() {
     test_suite("memory_redundancy.wast");
 }
+
+#[test]
+fn test_memory_fill() {
+    test_suite("memory_fill.wast");
+}

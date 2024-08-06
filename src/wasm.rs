@@ -218,6 +218,7 @@ pub enum Instr {
     MemoryInstrWithMemarg(Opcode, Memarg),
     MemorySize,
     MemoryGrow,
+    MemoryFill,
     I32Const(i32),
     I64Const(i64),
     F32Const(f32),
@@ -453,7 +454,7 @@ enum_try_from_int! {
         RefNull = 0xd0,
         RefIsNull = 0xd1,
         RefFunc = 0xd2,
-        TruncSat = 0xfc,
+        ExtendFC = 0xfc,
     }
 }
 
