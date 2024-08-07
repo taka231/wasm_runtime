@@ -386,3 +386,7 @@ fn test_memory_fill() {
 fn test_memory_copy() {
     test_suite("memory_copy.wast");
 }
+#[test]
+fn test_memory_init() {
+    test_suite("memory_init.wast");
+}

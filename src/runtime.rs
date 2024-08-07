@@ -21,6 +21,7 @@ pub struct Runtime {
     pub memory: Memory,
     pub global: Vec<Global>,
     pub tables: Vec<Table>,
+    pub data: Vec<Vec<u8>>,
     pub func_offset: u32,
     pub frames: Vec<Frame>,
 }
@@ -103,6 +104,7 @@ impl Runtime {
         };
         let mut tables = Vec::new();
         let mut globals = Vec::new();
+        let mut data_ = Vec::new();
         for section in sections {
             match section.content {
                 SectionContent::Code(funcs) => {
@@ -190,8 +192,11 @@ impl Runtime {
                                 };
                                 let addr = offset as usize;
                                 memory.data[addr..addr + data.len()].copy_from_slice(&data);
+                                data_.push(data);
                             }
-                            Data::Passive { data: _ } => todo!(),
+                            Data::Passive { data } => {
+                                data_.push(data);
+                            }
                         }
                     }
                 }
@@ -209,6 +214,7 @@ impl Runtime {
             memory,
             tables,
             global: globals,
+            data: data_,
             func_offset,
             frames: Vec::new(),
         }
@@ -504,6 +510,29 @@ impl Runtime {
                         let src_data = self.memory.data[src..src + size].to_owned();
                         self.memory.data[dest..dest + size].copy_from_slice(&src_data);
                     }
+                }
+                Instr::MemoryInit(dataidx) => {
+                    let dataidx = *dataidx as usize;
+                    let size = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                    let src = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                    let dest = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                    if src + size > self.data[dataidx].len() {
+                        Err("Out of data")?;
+                    }
+                    if dest + size > self.memory.data.len() {
+                        Err("Out of memory")?;
+                    }
+                    if size != 0 {
+                        self.memory.data[dest..dest + size]
+                            .copy_from_slice(&self.data[dataidx][src..src + size]);
+                    }
+                }
+                Instr::DataDrop(dataidx) => {
+                    let dataidx = *dataidx as usize;
+                    if dataidx >= self.data.len() {
+                        Err("Data not found")?;
+                    }
+                    self.data[dataidx] = Vec::new();
                 }
                 Instr::Ibinop(op) => {
                     let b = self.stack.pop().ok_or("expected value")?;

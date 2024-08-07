@@ -490,8 +490,18 @@ impl<'a> Parser<'a> {
                         let trunc_sat_op = (num as u8).try_into().map_err(|_| "invalid opcode")?;
                         Ok(Instr::TruncSat(trunc_sat_op))
                     }
-                    8 => unimplemented!(),
-                    9 => unimplemented!(),
+                    8 => {
+                        let dataidx = self.parse_leb128_u32()?;
+                        let byte = self.next_byte().map_err(|_| "expected byte")?;
+                        if byte != 0x00 {
+                            return Err("Invalid memory copy arg".to_string());
+                        }
+                        Ok(Instr::MemoryInit(dataidx))
+                    }
+                    9 => {
+                        let dataidx = self.parse_leb128_u32()?;
+                        Ok(Instr::DataDrop(dataidx))
+                    }
                     10 => {
                         let byte = self.next_byte().map_err(|_| "expected byte")?;
                         if byte != 0x00 {
