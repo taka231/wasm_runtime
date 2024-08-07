@@ -411,3 +411,8 @@ fn test_memory_trap() {
 fn test_nop() {
     test_suite("nop.wast");
 }
+
+#[test]
+fn test_select() {
+    test_suite("../tests/wasm/select.wast");
+}

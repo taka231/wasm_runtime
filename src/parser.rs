@@ -454,6 +454,15 @@ impl<'a> Parser<'a> {
             }
             Opcode::Drop => Ok(Instr::Drop),
             Opcode::Select => Ok(Instr::Select),
+            Opcode::SelectValType => {
+                let mut valtypes = Vec::new();
+                let count = self.parse_leb128_u32()?;
+                for _ in 0..count {
+                    let valtype = self.parse_valtype()?;
+                    valtypes.push(valtype);
+                }
+                Ok(Instr::SelectValType(valtypes))
+            }
             Opcode::Block => {
                 let block_type = self.parse_blocktype()?;
                 Ok(Instr::Block {

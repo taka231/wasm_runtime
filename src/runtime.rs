@@ -471,6 +471,16 @@ impl Runtime {
                         self.stack.push(b);
                     }
                 }
+                Instr::SelectValType(_) => {
+                    let selector = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                    let b = self.stack.pop().ok_or("expected value")?;
+                    let a = self.stack.pop().ok_or("expected value")?;
+                    if selector != 0 {
+                        self.stack.push(a);
+                    } else {
+                        self.stack.push(b);
+                    }
+                }
                 Instr::MemorySize => {
                     let current_size = self.memory.data.len() / Memory::PAGE_SIZE;
                     self.stack.push(Value::I32(current_size as i32));
