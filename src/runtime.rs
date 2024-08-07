@@ -479,14 +479,16 @@ impl Runtime {
                     let grow_size = self.stack.pop().ok_or("expected value")?.as_i32()?;
                     let current_size = self.memory.data.len() / Memory::PAGE_SIZE;
                     let new_size = current_size + grow_size as usize;
-                    if let Some(max) = self.memory.max {
-                        if new_size > max as usize {
-                            self.stack.push((-1).into());
-                            continue;
-                        }
+                    let max = self
+                        .memory
+                        .max
+                        .unwrap_or(u32::MAX / Memory::PAGE_SIZE as u32);
+                    if new_size > max as usize {
+                        self.stack.push((-1).into());
+                    } else {
+                        self.memory.data.resize(new_size * Memory::PAGE_SIZE, 0);
+                        self.stack.push(Value::I32(current_size as i32));
                     }
-                    self.memory.data.resize(new_size * Memory::PAGE_SIZE, 0);
-                    self.stack.push(Value::I32(current_size as i32));
                 }
                 Instr::MemoryFill => {
                     let size = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
