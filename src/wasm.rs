@@ -219,6 +219,7 @@ pub enum Instr {
     MemorySize,
     MemoryGrow,
     MemoryFill,
+    MemoryCopy,
     I32Const(i32),
     I64Const(i64),
     F32Const(f32),

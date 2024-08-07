@@ -492,7 +492,17 @@ impl<'a> Parser<'a> {
                     }
                     8 => unimplemented!(),
                     9 => unimplemented!(),
-                    10 => unimplemented!(),
+                    10 => {
+                        let byte = self.next_byte().map_err(|_| "expected byte")?;
+                        if byte != 0x00 {
+                            return Err("Invalid memory copy arg".to_string());
+                        }
+                        let byte = self.next_byte().map_err(|_| "expected byte")?;
+                        if byte != 0x00 {
+                            return Err("Invalid memory copy arg".to_string());
+                        }
+                        Ok(Instr::MemoryCopy)
+                    }
                     11 => {
                         let byte = self.next_byte().map_err(|_| "expected byte")?;
                         if byte != 0x00 {

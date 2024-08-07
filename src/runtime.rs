@@ -493,6 +493,18 @@ impl Runtime {
                         self.memory.data[addr..addr + size].fill(val as u8);
                     }
                 }
+                Instr::MemoryCopy => {
+                    let size = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                    let src = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                    let dest = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                    if src + size > self.memory.data.len() || dest + size > self.memory.data.len() {
+                        Err("Out of memory")?;
+                    }
+                    if size != 0 {
+                        let src_data = self.memory.data[src..src + size].to_owned();
+                        self.memory.data[dest..dest + size].copy_from_slice(&src_data);
+                    }
+                }
                 Instr::Ibinop(op) => {
                     let b = self.stack.pop().ok_or("expected value")?;
                     let a = self.stack.pop().ok_or("expected value")?;
