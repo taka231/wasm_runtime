@@ -396,3 +396,18 @@ fn test_memory_init() {
 fn test_memory_grow() {
     test_suite("memory_grow.wast");
 }
+
+#[test]
+fn test_memory_size() {
+    test_suite("memory_size.wast");
+}
+
+#[test]
+fn test_memory_trap() {
+    test_suite("memory_trap.wast");
+}
+
+#[test]
+fn test_nop() {
+    test_suite("nop.wast");
+}
