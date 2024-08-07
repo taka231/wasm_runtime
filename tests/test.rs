@@ -421,3 +421,18 @@ fn test_select() {
 fn test_if() {
     test_suite("../tests/wasm/if.wast");
 }
+
+#[test]
+fn test_stack() {
+    test_suite("stack.wast")
+}
+
+#[test]
+fn test_token() {
+    test_suite("token.wast")
+}
+
+#[test]
+fn test_custom() {
+    test_suite("custom.wast")
+}

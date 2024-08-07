@@ -127,7 +127,9 @@ impl Runtime {
                     exports = Some(export_map);
                 }
                 SectionContent::Memory(limits) => {
-                    memory = Memory::new(&limits[0]);
+                    if limits.len() >= 1 {
+                        memory = Memory::new(&limits[0]);
+                    }
                 }
                 SectionContent::Table(table_types) => {
                     for table_type in table_types {
