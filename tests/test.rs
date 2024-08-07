@@ -416,3 +416,8 @@ fn test_nop() {
 fn test_select() {
     test_suite("../tests/wasm/select.wast");
 }
+
+#[test]
+fn test_if() {
+    test_suite("../tests/wasm/if.wast");
+}
