@@ -6,7 +6,6 @@ use super::{value::Value, Runtime};
 
 type Result<T> = std::result::Result<T, String>;
 
-#[derive(Debug)]
 pub struct Store {
     pub func_instances: Vec<FuncInstance>,
     pub types: Vec<FuncType>,

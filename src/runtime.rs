@@ -1,19 +1,23 @@
 mod impl_instr;
+pub mod importer;
 pub mod store;
 pub mod value;
+pub mod wasi;
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+use importer::Importer;
 use store::{FuncInstance, Store, Table};
 use value::Value;
+use wasi::WasiSnapshotPreview1;
 
 use crate::wasm::{ExportDesc, Instr, Locals, Memarg, Modules, Opcode, ValType};
 
-#[derive(Debug)]
 pub struct Runtime {
     pub stack: Vec<Value>,
     pub frames: Vec<Frame>,
     pub store: Rc<RefCell<Store>>,
+    pub importers: HashMap<String, Box<dyn Importer>>,
 }
 
 #[derive(Debug)]
@@ -36,10 +40,17 @@ pub struct Label {
 impl Runtime {
     pub fn new(modules: Modules) -> Runtime {
         let store = Rc::new(RefCell::new(Store::new(modules)));
+
+        let mut importers: HashMap<String, Box<dyn Importer>> = HashMap::new();
+        importers.insert(
+            "wasi_snapshot_preview1".to_string(),
+            Box::new(WasiSnapshotPreview1::new()),
+        );
         Runtime {
             stack: vec![],
             frames: vec![],
             store,
+            importers,
         }
     }
 
@@ -94,8 +105,20 @@ impl Runtime {
             .get(idx)
             .ok_or("Function not found")?
             .clone();
-        let FuncInstance::Internal(func) = func else {
-            unimplemented!("External function");
+        let func = match func {
+            FuncInstance::Internal(func) => func,
+            FuncInstance::External(func) => {
+                let args = self
+                    .stack
+                    .split_off(self.stack.len() - func.ty.params.len());
+                let result = self
+                    .importers
+                    .get_mut(&func.module)
+                    .ok_or("importer not found")?
+                    .call(&mut *self.store.borrow_mut(), &func.name, args)?;
+                self.stack.push(result);
+                return Ok(());
+            }
         };
         let bottom = self.stack.len() - func.ty.params.len();
         let mut locals = self.stack.split_off(bottom);
