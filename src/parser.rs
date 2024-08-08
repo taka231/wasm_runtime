@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use crate::wasm::{
-    BlockType, Data, Element, ExportDesc, Func, FuncType, Global, ImportDesc, Instr, Limits,
-    Locals, Memarg, Mode, Opcode, RefType, ResultType, Section, SectionContent, TableType, ValType,
+    BlockType, Data, Element, ExportDesc, Func, FuncType, Global, Import, ImportDesc, Instr,
+    Limits, Locals, Memarg, Mode, Modules, Opcode, RefType, ResultType, SectionContent, TableType,
+    ValType,
 };
 
 #[derive(Debug)]
@@ -23,7 +24,7 @@ impl<'a> Parser<'a> {
             label_stack: Vec::new(),
         }
     }
-    pub fn parse(&mut self) -> Result<Vec<Section>> {
+    pub fn parse(&mut self) -> Result<Modules> {
         let magic = self.bytes.get(self.pos..self.pos + 4);
         self.pos += 4;
         if magic != Some(&[0x00, 0x61, 0x73, 0x6d]) {
@@ -43,8 +44,8 @@ impl<'a> Parser<'a> {
         self.pos += 1;
         Ok(*byte)
     }
-    fn parse_section(&mut self) -> Result<Vec<Section>> {
-        let mut sections = Vec::new();
+    fn parse_section(&mut self) -> Result<Modules> {
+        let mut modules = Modules::default();
         loop {
             if self.is_eof() {
                 break;
@@ -53,29 +54,42 @@ impl<'a> Parser<'a> {
                 .next_byte()
                 .map_err(|err| format!("{err}: expected section id"))?;
             let size = self.parse_leb128_u32()?;
-            sections.push(Section {
-                content: match id {
-                    0 => self.parse_custom(size)?,
-                    1 => self.parse_type(size)?,
-                    2 => self.parse_import(size)?,
-                    3 => self.parse_function(size)?,
-                    4 => self.parse_table(size)?,
-                    5 => self.parse_memory(size)?,
-                    6 => self.parse_global(size)?,
-                    7 => self.parse_export(size)?,
-                    8 => self.parse_start(size)?,
-                    9 => self.parse_element(size)?,
-                    10 => self.parse_code(size)?,
-                    11 => self.parse_data(size)?,
-                    12 => self.parse_data_count(size)?,
-                    _ => {
-                        return Err(format!("Unknown section id: {}", id));
-                    }
-                },
-                size,
-            });
+            let section = match id {
+                0 => self.parse_custom(size)?,
+                1 => self.parse_type(size)?,
+                2 => self.parse_import(size)?,
+                3 => self.parse_function(size)?,
+                4 => self.parse_table(size)?,
+                5 => self.parse_memory(size)?,
+                6 => self.parse_global(size)?,
+                7 => self.parse_export(size)?,
+                8 => self.parse_start(size)?,
+                9 => self.parse_element(size)?,
+                10 => self.parse_code(size)?,
+                11 => self.parse_data(size)?,
+                12 => self.parse_data_count(size)?,
+                _ => {
+                    return Err(format!("Unknown section id: {}", id));
+                }
+            };
+            use SectionContent::*;
+            match section {
+                Custom { .. } => {}
+                Type(func_type) => modules.types = func_type,
+                Import(import) => modules.import = import,
+                Function(func) => modules.func = func,
+                Table(table) => modules.table = table,
+                Memory(limits) => modules.memory = limits,
+                Global(global) => modules.global = global,
+                Export(export) => modules.export = export,
+                Start => todo!(),
+                Element(element) => modules.elem = element,
+                Code(code) => modules.code = code,
+                Data(data) => modules.data = data,
+                DataCount => {}
+            }
         }
-        Ok(sections)
+        Ok(modules)
     }
     fn parse_custom(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
@@ -98,13 +112,13 @@ impl<'a> Parser<'a> {
         let skip_pos = self.pos + size as usize;
         let count = self.parse_leb128_u32()?;
         let mut imports = HashMap::new();
-        let mut import_func_count = 0;
+        let mut imported_functions = Vec::new();
         for _ in 0..count {
             let module = self.parse_name()?;
             let name = self.parse_name()?;
             let desc = match self.next_byte()? {
                 0x00 => {
-                    import_func_count += 1;
+                    imported_functions.push((module.clone(), name.clone()));
                     ImportDesc::Func(self.parse_leb128_u32()?)
                 }
                 0x01 => ImportDesc::Table(self.parse_leb128_u32()?),
@@ -117,10 +131,10 @@ impl<'a> Parser<'a> {
             imports.insert((module, name), desc);
         }
         self.ensure_section_end(skip_pos)?;
-        Ok(SectionContent::Import {
+        Ok(SectionContent::Import(Import {
             import_map: imports,
-            import_func_count,
-        })
+            imported_functions,
+        }))
     }
     fn parse_function(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;

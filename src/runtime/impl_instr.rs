@@ -24,7 +24,8 @@ impl Runtime {
                     F64Load | I64Load => 8,
                     _ => unreachable!(),
                 };
-                let value = self.memory.load(*offset, addr, size)?;
+                let store = self.store.borrow();
+                let value = store.memory.load(*offset, addr, size)?;
                 let value = match op {
                     I32Load => i32::from_le_bytes([value[0], value[1], value[2], value[3]]).into(),
                     I64Load => i64::from_le_bytes([
@@ -78,7 +79,10 @@ impl Runtime {
                     _ => unreachable!(),
                 };
                 let addr = addr.as_i32()? as u32;
-                self.memory.store(*offset, addr, size, &value)?;
+                self.store
+                    .borrow_mut()
+                    .memory
+                    .store(*offset, addr, size, &value)?;
             }
             _ => unreachable!("opcode {:?} is not a memory instruction", op),
         };

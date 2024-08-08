@@ -2,14 +2,9 @@ use std::collections::HashMap;
 
 #[derive(Debug)]
 pub enum SectionContent {
-    Custom {
-        name: String,
-    },
+    Custom { name: String },
     Type(Vec<FuncType>),
-    Import {
-        import_map: HashMap<(String, String), ImportDesc>,
-        import_func_count: u32,
-    },
+    Import(Import),
     Function(Vec<TypeIdx>),
     Table(Vec<TableType>),
     Memory(Vec<Limits>),
@@ -20,6 +15,26 @@ pub enum SectionContent {
     Code(Vec<Func>),
     Data(Vec<Data>),
     DataCount,
+}
+
+#[derive(Debug, Default)]
+pub struct Import {
+    pub import_map: HashMap<(String, String), ImportDesc>,
+    pub imported_functions: Vec<(String, String)>,
+}
+
+#[derive(Debug, Default)]
+pub struct Modules {
+    pub types: Vec<FuncType>,
+    pub func: Vec<TypeIdx>,
+    pub table: Vec<TableType>,
+    pub memory: Vec<Limits>,
+    pub global: Vec<Global>,
+    pub elem: Vec<Element>,
+    pub code: Vec<Func>,
+    pub data: Vec<Data>,
+    pub import: Import,
+    pub export: HashMap<String, ExportDesc>,
 }
 
 #[derive(Debug, Clone)]
@@ -143,7 +158,7 @@ pub struct Locals {
     pub ty: ValType,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Func {
     pub size: u32,
     pub locals: Vec<Locals>,

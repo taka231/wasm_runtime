@@ -2,6 +2,14 @@ use wasm_runtime::parser::Parser;
 use wasm_runtime::runtime::Runtime;
 
 fn main() {
+    // (1)
+    let bytes = include_bytes!("../tests/wasm/sample.wasm");
+    let mut parser = Parser::new(bytes);
+    let sections = parser.parse().unwrap();
+    println!("(1)");
+    println!("{:?}", &sections);
+    // let mut runtime = Runtime::new(sections);
+    // runtime.call_with_name("_start", Vec::new()).unwrap();
     // (4)
     let add_bytes = include_bytes!("../tests/wasm/add.wasm");
     let mut parser = Parser::new(add_bytes);

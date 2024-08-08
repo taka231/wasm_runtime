@@ -1,29 +1,19 @@
 mod impl_instr;
+pub mod store;
 pub mod value;
 
-use std::collections::HashMap;
+use std::{cell::RefCell, rc::Rc};
 
+use store::{FuncInstance, Store, Table};
 use value::Value;
 
-use crate::wasm::{
-    Data, ExportDesc, Func, FuncType, ImportDesc, Instr, Limits, Locals, Memarg, Mode, Opcode,
-    RefType, Section, SectionContent, TypeIdx, ValType,
-};
+use crate::wasm::{ExportDesc, Instr, Locals, Memarg, Modules, Opcode, ValType};
 
 #[derive(Debug)]
 pub struct Runtime {
     pub stack: Vec<Value>,
-    pub codes: Option<Vec<Func>>,
-    pub func_types: Option<Vec<TypeIdx>>,
-    pub types: Option<Vec<FuncType>>,
-    pub imports: Option<HashMap<(String, String), ImportDesc>>,
-    pub exports: Option<HashMap<String, ExportDesc>>,
-    pub memory: Memory,
-    pub global: Vec<Global>,
-    pub tables: Vec<Table>,
-    pub data: Vec<Vec<u8>>,
-    pub func_offset: u32,
     pub frames: Vec<Frame>,
+    pub store: Rc<RefCell<Store>>,
 }
 
 #[derive(Debug)]
@@ -36,53 +26,6 @@ pub struct Frame {
     pub labels: Vec<Label>,
 }
 
-#[derive(Debug)]
-pub enum Table {
-    Funcs(Vec<Option<usize>>),
-    Refs(Vec<Option<Value>>),
-}
-
-#[derive(Debug)]
-pub struct Global {
-    pub value: Value,
-    pub mutable: bool,
-}
-
-#[derive(Debug)]
-pub struct Memory {
-    pub data: Vec<u8>,
-    pub max: Option<u32>,
-}
-
-impl Memory {
-    fn new(limit: &Limits) -> Memory {
-        Memory {
-            data: vec![0; Self::PAGE_SIZE * limit.min as usize],
-            max: limit.max,
-        }
-    }
-    const PAGE_SIZE: usize = 65536;
-    fn store(&mut self, offset: u32, index: u32, size: u32, value: &[u8]) -> Result<(), String> {
-        let addr = offset + index;
-        let addr = addr as usize;
-        let size = size as usize;
-        if addr + size > self.data.len() {
-            return Err("Out of memory".to_string());
-        }
-        self.data[addr..addr + size].copy_from_slice(&value[0..size]);
-        Ok(())
-    }
-    fn load(&self, offset: u32, index: u32, size: u32) -> Result<&[u8], String> {
-        let addr = offset + index;
-        let addr = addr as usize;
-        let size = size as usize;
-        if addr + size > self.data.len() {
-            return Err("Out of memory".to_string());
-        }
-        Ok(&self.data[addr..addr + size])
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Label {
     sp: usize,
@@ -91,134 +34,12 @@ pub struct Label {
 }
 
 impl Runtime {
-    pub fn new(sections: Vec<Section>) -> Runtime {
-        let mut codes = None;
-        let mut types = None;
-        let mut func_types = None;
-        let mut imports = None;
-        let mut exports = None;
-        let mut func_offset = 0;
-        let mut memory = Memory {
-            data: vec![],
-            max: None,
-        };
-        let mut tables = Vec::new();
-        let mut globals = Vec::new();
-        let mut data_ = Vec::new();
-        for section in sections {
-            match section.content {
-                SectionContent::Code(funcs) => {
-                    codes = Some(funcs);
-                }
-                SectionContent::Function(functypes) => {
-                    func_types = Some(functypes);
-                }
-                SectionContent::Type(func_types) => {
-                    types = Some(func_types);
-                }
-                SectionContent::Import {
-                    import_map,
-                    import_func_count,
-                } => {
-                    imports = Some(import_map);
-                    func_offset = import_func_count;
-                }
-                SectionContent::Export(export_map) => {
-                    exports = Some(export_map);
-                }
-                SectionContent::Memory(limits) => {
-                    if limits.len() >= 1 {
-                        memory = Memory::new(&limits[0]);
-                    }
-                }
-                SectionContent::Table(table_types) => {
-                    for table_type in table_types {
-                        let table = match table_type.elem_type {
-                            RefType::FuncRef => {
-                                Table::Funcs(vec![None; table_type.limits.min as usize])
-                            }
-                            RefType::ExternRef => {
-                                Table::Refs(vec![None; table_type.limits.min as usize])
-                            }
-                        };
-                        tables.push(table);
-                    }
-                }
-                SectionContent::Element(elements) => {
-                    for element in elements {
-                        if let Mode::Active { tableidx, offset } = element.mode {
-                            if element.ref_type == RefType::FuncRef {
-                                let table = &mut tables[tableidx as usize];
-                                let offset = match Self::eval_expr(offset).unwrap() {
-                                    Value::I32(n) => n as usize,
-                                    Value::I64(n) => n as usize,
-                                    _ => panic!("Invalid offset type"),
-                                };
-                                match table {
-                                    Table::Funcs(funcs) => {
-                                        for (i, funcidx) in element.funcidxs.iter().enumerate() {
-                                            funcs[offset as usize + i] = Some(*funcidx as usize);
-                                        }
-                                    }
-                                    _ => panic!("Invalid table type"),
-                                }
-                            }
-                        }
-                    }
-                }
-                SectionContent::Global(globals_) => {
-                    for global in globals_ {
-                        let value = Self::eval_expr(global.init).unwrap();
-                        let global = Global {
-                            value,
-                            mutable: global.is_mutable,
-                        };
-                        globals.push(global);
-                    }
-                }
-                SectionContent::Data(data) => {
-                    for data in data {
-                        match data {
-                            Data::Active {
-                                memidx,
-                                offset,
-                                data,
-                            } => {
-                                if memidx != 0 {
-                                    panic!("Invalid memory index");
-                                }
-                                let offset = match Self::eval_expr(offset).unwrap() {
-                                    Value::I32(n) => n as u32,
-                                    Value::I64(n) => n as u32,
-                                    _ => panic!("Invalid offset type"),
-                                };
-                                let addr = offset as usize;
-                                memory.data[addr..addr + data.len()].copy_from_slice(&data);
-                                data_.push(data);
-                            }
-                            Data::Passive { data } => {
-                                data_.push(data);
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
+    pub fn new(modules: Modules) -> Runtime {
+        let store = Rc::new(RefCell::new(Store::new(modules)));
         Runtime {
-            stack: Vec::new(),
-            codes,
-            func_types,
-            types,
-            imports,
-            exports,
-            memory,
-            tables,
-            global: globals,
-            data: data_,
-            func_offset,
-            frames: Vec::new(),
+            stack: vec![],
+            frames: vec![],
+            store,
         }
     }
 
@@ -238,20 +59,28 @@ impl Runtime {
     }
 
     pub fn call_with_name(&mut self, name: &str, args: Vec<Value>) -> Result<Vec<Value>, String> {
-        let exports = self.exports.as_ref().ok_or("Export section not found")?;
-        let export_desc = exports.get(name).ok_or("Export not found")?;
+        let export_desc = self
+            .store
+            .borrow()
+            .exports
+            .get(name)
+            .ok_or("Export not found")?
+            .clone();
         let func_idx = match export_desc {
-            ExportDesc::Func(idx) => *idx as usize,
+            ExportDesc::Func(idx) => idx as usize,
             _ => return Err("Export is not a function".to_string()),
         };
-        let func_types = self.func_types.as_ref().ok_or("Function type not found")?;
-        let func_type_idx = func_types[func_idx];
         for arg in args {
             self.stack.push(arg);
         }
         self.call(func_idx)?;
-        let types = self.types.as_ref().unwrap();
-        let func_type = types.get(func_type_idx as usize).ok_or("Type not found")?;
+        let func_type = self
+            .store
+            .borrow()
+            .func_instances
+            .get(func_idx)
+            .ok_or("Function not found")?
+            .ty();
         let result_num = func_type.results.len();
         let results = self.stack.split_off(self.stack.len() - result_num);
         Ok(results)
@@ -259,22 +88,18 @@ impl Runtime {
 
     pub fn call(&mut self, idx: usize) -> Result<(), String> {
         let func = self
-            .codes
-            .as_ref()
-            .unwrap()
+            .store
+            .borrow()
+            .func_instances
             .get(idx)
-            .ok_or("Function not found")?;
-        let func_types = self.func_types.as_ref().ok_or("Function type not found")?;
-        let fun_type_idx = func_types[idx];
-        let fun_type = self
-            .types
-            .as_ref()
-            .unwrap()
-            .get(fun_type_idx as usize)
-            .ok_or("Type not found")?;
-        let bottom = self.stack.len() - fun_type.params.len();
+            .ok_or("Function not found")?
+            .clone();
+        let FuncInstance::Internal(func) = func else {
+            unimplemented!("External function");
+        };
+        let bottom = self.stack.len() - func.ty.params.len();
         let mut locals = self.stack.split_off(bottom);
-        for Locals { count, ty } in &func.locals {
+        for Locals { count, ty } in &func.code.locals {
             for _ in 0..*count {
                 locals.push(match ty {
                     ValType::I32 => Value::I32(0),
@@ -290,8 +115,8 @@ impl Runtime {
         let mut frame = Frame {
             pc: 0,
             sp: self.stack.len(),
-            instrs: func.instrs.clone(),
-            return_num: fun_type.results.len(),
+            instrs: func.code.instrs.clone(),
+            return_num: func.ty.results.len(),
             locals,
             labels: vec![],
         };
@@ -313,31 +138,24 @@ impl Runtime {
                     self.stack.push(f.into());
                 }
                 Instr::LocalSet(n) => {
-                    let n = *n;
                     let value = self.stack.pop().ok_or("expected value")?;
-                    frame.locals[n as usize] = value.into();
+                    frame.locals[*n as usize] = value.into();
                 }
                 Instr::LocalTee(n) => {
-                    let n = *n;
                     let value = self.stack.last().ok_or("expected value")?;
-                    frame.locals[n as usize] = value.clone();
+                    frame.locals[*n as usize] = value.clone();
                 }
                 Instr::LocalGet(n) => {
                     let value = frame.locals[*n as usize].clone();
                     self.stack.push(value);
                 }
                 Instr::GlobalGet(n) => {
-                    let global = &self.global[*n as usize];
-                    self.stack.push(global.value.clone());
+                    let value = self.store.borrow().global_get(*n)?;
+                    self.stack.push(value);
                 }
                 Instr::GlobalSet(n) => {
-                    let global = &mut self.global[*n as usize];
-                    if global.mutable {
-                        let value = self.stack.pop().ok_or("expected value")?;
-                        global.value = value;
-                    } else {
-                        Err("Global is immutable")?;
-                    }
+                    let value = self.stack.pop().ok_or("expected value")?;
+                    self.store.borrow_mut().global_set(*n, value)?;
                 }
                 Instr::MemoryInstrWithMemarg(op, Memarg { offset, .. }) => {
                     self.exec_memory_instr_with_memarg(op, offset)?;
@@ -346,10 +164,11 @@ impl Runtime {
                     block_type,
                     jump_pc,
                 } => {
-                    let param_num = block_type.count_args(self.types.as_ref().unwrap());
+                    let types = &self.store.borrow().types;
+                    let param_num = block_type.count_args(&types);
                     frame.labels.push(Label {
                         sp: self.stack.len() - param_num,
-                        return_num: block_type.count_results(self.types.as_ref().unwrap()),
+                        return_num: block_type.count_results(&types),
                         jump_pc: *jump_pc,
                     });
                 }
@@ -357,10 +176,11 @@ impl Runtime {
                     block_type,
                     jump_pc,
                 } => {
-                    let param_num = block_type.count_args(self.types.as_ref().unwrap());
+                    let types = &self.store.borrow().types;
+                    let param_num = block_type.count_args(&types);
                     frame.labels.push(Label {
                         sp: self.stack.len() - param_num,
-                        return_num: block_type.count_results(self.types.as_ref().unwrap()),
+                        return_num: block_type.count_results(&types),
                         jump_pc: *jump_pc,
                     });
                 }
@@ -368,8 +188,9 @@ impl Runtime {
                     block_type,
                     jump_pc,
                 } => {
+                    let types = &self.store.borrow().types;
                     let value = self.stack.pop().ok_or("expected value")?;
-                    let param_num = block_type.count_args(self.types.as_ref().unwrap());
+                    let param_num = block_type.count_args(&types);
                     let mut jump_pc = *jump_pc;
                     if value.as_i32()? == 0 {
                         frame.pc = jump_pc;
@@ -382,7 +203,7 @@ impl Runtime {
                     }
                     frame.labels.push(Label {
                         sp: self.stack.len() - param_num,
-                        return_num: block_type.count_results(self.types.as_ref().unwrap()),
+                        return_num: block_type.count_results(&types),
                         jump_pc,
                     });
                 }
@@ -443,16 +264,16 @@ impl Runtime {
                 Instr::CallIndirect(typeidx, tableidx) => {
                     let typeidx = *typeidx;
                     let tableidx = *tableidx;
-                    let funcidx = match &self.tables[tableidx as usize] {
-                        Table::Funcs(funcs) => {
+                    let funcidx = match &self.store.borrow().tables.get(tableidx as usize) {
+                        Some(Table::Funcs(funcs)) => {
                             let index = self.stack.pop().ok_or("expected value")?.as_i32()?;
                             funcs[index as usize].ok_or("expected function index")?
                         }
+                        None => Err("Table not found")?,
                         _ => Err("Invalid table type")?,
                     };
-                    let func_type = &self.types.as_ref().unwrap()[typeidx as usize];
-                    let called_func_type = &self.types.as_ref().unwrap()
-                        [self.func_types.as_ref().unwrap()[funcidx] as usize];
+                    let func_type = self.store.borrow().types[typeidx as usize].clone();
+                    let called_func_type = self.store.borrow().func_instances[funcidx].ty();
                     if func_type != called_func_type {
                         Err("Function type mismatch")?;
                     }
@@ -484,69 +305,36 @@ impl Runtime {
                     }
                 }
                 Instr::MemorySize => {
-                    let current_size = self.memory.data.len() / Memory::PAGE_SIZE;
-                    self.stack.push(Value::I32(current_size as i32));
+                    self.stack.push(self.store.borrow().memory.size());
                 }
                 Instr::MemoryGrow => {
                     let grow_size = self.stack.pop().ok_or("expected value")?.as_i32()?;
-                    let current_size = self.memory.data.len() / Memory::PAGE_SIZE;
-                    let new_size = current_size + grow_size as usize;
-                    let max = self
-                        .memory
-                        .max
-                        .unwrap_or(u32::MAX / Memory::PAGE_SIZE as u32);
-                    if new_size > max as usize {
-                        self.stack.push((-1).into());
-                    } else {
-                        self.memory.data.resize(new_size * Memory::PAGE_SIZE, 0);
-                        self.stack.push(Value::I32(current_size as i32));
-                    }
+                    self.stack
+                        .push(self.store.borrow_mut().memory.grow(grow_size as usize));
                 }
                 Instr::MemoryFill => {
                     let size = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
                     let val = self.stack.pop().ok_or("expected value")?.as_i32()?;
                     let addr = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
-                    if addr + size > self.memory.data.len() {
-                        Err("Out of memory")?;
-                    }
-                    if size != 0 {
-                        self.memory.data[addr..addr + size].fill(val as u8);
-                    }
+                    self.store.borrow_mut().memory.fill(addr, size, val as u8)?;
                 }
                 Instr::MemoryCopy => {
                     let size = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
                     let src = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
                     let dest = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
-                    if src + size > self.memory.data.len() || dest + size > self.memory.data.len() {
-                        Err("Out of memory")?;
-                    }
-                    if size != 0 {
-                        let src_data = self.memory.data[src..src + size].to_owned();
-                        self.memory.data[dest..dest + size].copy_from_slice(&src_data);
-                    }
+                    self.store.borrow_mut().memory.copy(src, dest, size)?;
                 }
                 Instr::MemoryInit(dataidx) => {
                     let dataidx = *dataidx as usize;
                     let size = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
                     let src = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
                     let dest = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
-                    if src + size > self.data[dataidx].len() {
-                        Err("Out of data")?;
-                    }
-                    if dest + size > self.memory.data.len() {
-                        Err("Out of memory")?;
-                    }
-                    if size != 0 {
-                        self.memory.data[dest..dest + size]
-                            .copy_from_slice(&self.data[dataidx][src..src + size]);
-                    }
+                    self.store
+                        .borrow_mut()
+                        .memory_init(dataidx, src, dest, size)?;
                 }
                 Instr::DataDrop(dataidx) => {
-                    let dataidx = *dataidx as usize;
-                    if dataidx >= self.data.len() {
-                        Err("Data not found")?;
-                    }
-                    self.data[dataidx] = Vec::new();
+                    self.store.borrow_mut().data_drop(*dataidx as usize)?;
                 }
                 Instr::Ibinop(op) => {
                     let b = self.stack.pop().ok_or("expected value")?;
