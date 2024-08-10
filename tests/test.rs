@@ -139,7 +139,7 @@ fn test_suite(file_path: &str) {
                 let bytes = std::fs::read(filename).unwrap();
                 let mut parser = Parser::new(&bytes);
                 let module = parser.parse().unwrap();
-                runtime = Some(Runtime::new(module));
+                runtime = Some(Runtime::new(module, None));
             }
             Test::AssertReturn {
                 line: _,

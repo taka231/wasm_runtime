@@ -9,7 +9,6 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use importer::Importer;
 use store::{FuncInstance, Store, Table};
 use value::Value;
-use wasi::WasiSnapshotPreview1;
 
 use crate::wasm::{ExportDesc, Instr, Locals, Memarg, Modules, Opcode, ValType};
 
@@ -38,14 +37,13 @@ pub struct Label {
 }
 
 impl Runtime {
-    pub fn new(modules: Modules) -> Runtime {
+    pub fn new(modules: Modules, wasi: Option<Box<dyn Importer>>) -> Runtime {
         let store = Rc::new(RefCell::new(Store::new(modules)));
 
         let mut importers: HashMap<String, Box<dyn Importer>> = HashMap::new();
-        importers.insert(
-            "wasi_snapshot_preview1".to_string(),
-            Box::new(WasiSnapshotPreview1::new()),
-        );
+        if let Some(wasi) = wasi {
+            importers.insert(wasi.name().to_owned(), wasi);
+        };
         Runtime {
             stack: vec![],
             frames: vec![],
