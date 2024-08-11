@@ -367,6 +367,38 @@ impl WasiSnapshotPreview1 {
         Ok(Value::I32(0))
     }
 
+    fn args_sizes_get(&mut self, store: &mut Store, args: Vec<Value>) -> Result<Value, String> {
+        let argc_offset = args[0].as_i32()? as u32;
+        let argv_buf_size_offset = args[1].as_i32()? as u32;
+        let mut argc: i32 = 0;
+        let mut argv_buf_size: i32 = 0;
+        for arg in env::args() {
+            argc += 1;
+            argv_buf_size += arg.len() as i32 + 1;
+        }
+        let memory = &mut store.memory;
+        memory.store(argc_offset, 0, 4, &argc.to_le_bytes())?;
+        memory.store(argv_buf_size_offset, 0, 4, &argv_buf_size.to_le_bytes())?;
+        Ok(Value::I32(0))
+    }
+
+    fn args_get(&mut self, store: &mut Store, args: Vec<Value>) -> Result<Value, String> {
+        let mut argv_offset = args[0].as_i32()? as u32;
+        let mut argv_buf_offset = args[1].as_i32()? as u32;
+        for arg in env::args() {
+            store
+                .memory
+                .store(argv_offset, 0, 4, &argv_buf_offset.to_le_bytes())?;
+            argv_offset += 4;
+            let text = format!("{arg}\0");
+            store
+                .memory
+                .store(argv_buf_offset, 0, text.len() as u32, text.as_bytes())?;
+            argv_buf_offset += text.len() as u32;
+        }
+        Ok(Value::I32(0))
+    }
+
     const RIGHTS_FD_READ: i64 = 2;
     const RIGHTS_FD_READDIR: i64 = 0x4000;
     const RIGHTS_FD_DATASYNC: i64 = 0x1;
@@ -405,6 +437,8 @@ impl Importer for WasiSnapshotPreview1 {
             "path_open" => self.path_open(store, args),
             "fd_filestat_get" => self.fd_filestat_get(store, args),
             "fd_seek" => self.fd_seek(store, args),
+            "args_sizes_get" => self.args_sizes_get(store, args),
+            "args_get" => self.args_get(store, args),
             _ => unimplemented!("{name}"),
         }
     }
