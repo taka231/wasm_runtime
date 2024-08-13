@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use crate::wasm::{
-    BlockType, Data, Element, ExportDesc, Func, FuncType, Global, Import, ImportDesc, Instr,
-    Limits, Locals, Memarg, Mode, Modules, Opcode, RefType, ResultType, SectionContent, TableType,
-    ValType,
+    AbsHeapType, BlockType, CompositeType, Data, Element, ExportDesc, FieldType, Func, FuncType,
+    Global, HeapType, Import, ImportDesc, Instr, Limits, Locals, Memarg, Mode, Modules, Opcode,
+    PackedType, RefType, ResultType, SectionContent, StorageType, TableType, ValType,
 };
+use crate::wasm::{RefNullInstrType, WasmGCInstr};
 
 #[derive(Debug)]
 pub struct Parser<'a> {
@@ -97,6 +98,19 @@ impl<'a> Parser<'a> {
         self.pos = skip_pos;
         Ok(SectionContent::Custom { name })
     }
+    #[cfg(feature = "wasmgc")]
+    fn parse_type(&mut self, size: u32) -> Result<SectionContent> {
+        let skip_pos = self.pos + size as usize;
+        let count = self.parse_leb128_u32()?;
+        let mut types = Vec::new();
+        for _ in 0..count {
+            let ty = self.parse_composite_type()?;
+            types.push(ty);
+        }
+        self.ensure_section_end(skip_pos)?;
+        Ok(SectionContent::Type(types))
+    }
+    #[cfg(feature = "wasm")]
     fn parse_type(&mut self, size: u32) -> Result<SectionContent> {
         let skip_pos = self.pos + size as usize;
         let count = self.parse_leb128_u32()?;
@@ -242,7 +256,7 @@ impl<'a> Parser<'a> {
                     funcidxs.push(funcidx);
                 }
                 Ok(Element {
-                    ref_type: RefType::FuncRef,
+                    ref_type: RefType::FUNCREF,
                     mode: Mode::Active {
                         tableidx: 0,
                         offset,
@@ -265,7 +279,7 @@ impl<'a> Parser<'a> {
                     funcidxs.push(funcidx);
                 }
                 Ok(Element {
-                    ref_type: RefType::FuncRef,
+                    ref_type: RefType::FUNCREF,
                     mode: Mode::Active { tableidx, offset },
                     expr: vec![],
                     funcidxs,
@@ -561,7 +575,7 @@ impl<'a> Parser<'a> {
                 Ok(Instr::MemoryGrow)
             }
             Opcode::RefNull => {
-                let reftype = self.parse_reftype()?;
+                let reftype = self.parse_refnull_instr_type()?;
                 Ok(Instr::RefNull(reftype))
             }
             Opcode::RefIsNull => Ok(Instr::RefIsNull),
@@ -569,6 +583,7 @@ impl<'a> Parser<'a> {
                 let funcidx = self.parse_leb128_u32()?;
                 Ok(Instr::RefFunc(funcidx))
             }
+            Opcode::ExtendWasmGC => Ok(Instr::WasmGCInstr(self.parse_wasmgc_instr()?)),
             op => {
                 if op.is_memory_instr_with_memarg() {
                     let align = self.parse_leb128_u32()?;
@@ -594,6 +609,29 @@ impl<'a> Parser<'a> {
                     Err(format!("Invalid opcode: {:?}", op))
                 }
             }
+        }
+    }
+    fn parse_wasmgc_instr(&mut self) -> Result<WasmGCInstr> {
+        let byte = self
+            .next_byte()
+            .map_err(|_| "expected wasmGC instruction")?;
+        match byte {
+            0 => {
+                let typeidx = self.parse_leb128_u32()?;
+                Ok(WasmGCInstr::StructNew(typeidx))
+            }
+            2 => {
+                let typeidx = self.parse_leb128_u32()?;
+                let fieldidx = self.parse_leb128_u32()?;
+                Ok(WasmGCInstr::StructGet { typeidx, fieldidx })
+            }
+            5 => {
+                let typeidx = self.parse_leb128_u32()?;
+                let fieldidx = self.parse_leb128_u32()?;
+                Ok(WasmGCInstr::StructSet { typeidx, fieldidx })
+            }
+            0..=30 => unimplemented!("unimplemented wasmGC instruction: {byte}"),
+            _ => Err("expected wasmGC instruction".into()),
         }
     }
     fn parse_data(&mut self, size: u32) -> Result<SectionContent> {
@@ -678,11 +716,26 @@ impl<'a> Parser<'a> {
         name.map(|name| String::from_utf8_lossy(name).to_string())
             .ok_or("Unexpected EOF".to_string())
     }
+    #[cfg(feature = "wasm")]
     fn parse_valtype(&mut self) -> Result<ValType> {
         self.next_byte()
             .map_err(|err| format!("{err}: expected valtype"))?
             .try_into()
             .map_err(|_| format!("invalid valtype"))
+    }
+    #[cfg(feature = "wasmgc")]
+    fn parse_valtype(&mut self) -> Result<ValType> {
+        match self.next_byte().map_err(|_| "expected valtype")? {
+            0x7f => Ok(ValType::I32),
+            0x7e => Ok(ValType::I64),
+            0x7d => Ok(ValType::F32),
+            0x7c => Ok(ValType::F64),
+            0x7b => Ok(ValType::V128),
+            _ => {
+                self.pos -= 1;
+                Ok(ValType::RefType(self.parse_reftype()?))
+            }
+        }
     }
     fn parse_blocktype(&mut self) -> Result<BlockType> {
         if self.bytes[self.pos] == 0x40 {
@@ -691,10 +744,8 @@ impl<'a> Parser<'a> {
         }
         let block_type = self.parse_leb128_i64()?;
         if block_type < 0 {
-            let byte = block_type as u8 & 0x7f;
-            Ok(BlockType::ValType(
-                byte.try_into().map_err(|_| "invalid blocktype")?,
-            ))
+            self.pos -= 1;
+            Ok(BlockType::ValType(self.parse_valtype()?))
         } else {
             if block_type > std::u32::MAX as i64 {
                 return Err("too big typeidx blocktype".to_string());
@@ -719,6 +770,60 @@ impl<'a> Parser<'a> {
         let results = self.parse_resulttype()?;
         Ok(FuncType { params, results })
     }
+    fn parse_composite_type(&mut self) -> Result<CompositeType> {
+        let byte = self
+            .next_byte()
+            .map_err(|err| format!("{err}: expected composite type tag"))?;
+        match byte {
+            0x5e => {
+                let ty = self.parse_fieldtype()?;
+                Ok(CompositeType::ArrayType(ty))
+            }
+            0x5f => {
+                let size = self.parse_leb128_u32()?;
+                let mut fieldtypes = Vec::new();
+                for _ in 0..size {
+                    fieldtypes.push(self.parse_fieldtype()?);
+                }
+                Ok(CompositeType::StructType(fieldtypes))
+            }
+            0x60 => {
+                self.pos -= 1;
+                let functype = self.parse_funtype()?;
+                Ok(CompositeType::FuncType(functype))
+            }
+            _ => Err("Invalid composite type tag".to_string()),
+        }
+    }
+    fn parse_fieldtype(&mut self) -> Result<FieldType> {
+        let storage_type = self.parse_storagetype()?;
+        let is_mutable = match self.next_byte()? {
+            0x00 => false,
+            0x01 => true,
+            _ => {
+                return Err("Invalid mutability".to_string());
+            }
+        };
+        Ok(FieldType {
+            ty: storage_type,
+            is_mutable,
+        })
+    }
+    fn parse_storagetype(&mut self) -> Result<StorageType> {
+        match self.parse_valtype() {
+            Ok(valtype) => Ok(StorageType::ValType(valtype)),
+            Err(_) => {
+                let packedtype = self.parse_packedtype()?;
+                Ok(StorageType::PackedType(packedtype))
+            }
+        }
+    }
+    fn parse_packedtype(&mut self) -> Result<PackedType> {
+        self.next_byte()
+            .map_err(|err| format!("{err}: expected storage type"))?
+            .try_into()
+            .map_err(|_| format!("invalid storage type"))
+    }
     fn parse_limits(&mut self) -> Result<Limits> {
         let byte = self
             .next_byte()
@@ -737,11 +842,53 @@ impl<'a> Parser<'a> {
             Err("Invalid limits".to_string())
         }
     }
+    #[cfg(feature = "wasm")]
     fn parse_reftype(&mut self) -> Result<RefType> {
         self.next_byte()
             .map_err(|err| format!("{err}: expected reftype"))?
             .try_into()
             .map_err(|_| format!("invalid reftype"))
+    }
+    #[cfg(feature = "wasmgc")]
+    fn parse_reftype(&mut self) -> Result<RefType> {
+        match self
+            .next_byte()
+            .map_err(|err| format!("{err}: expected reftype"))?
+        {
+            0x64 => Ok(RefType::Ref(self.parse_heaptype()?)),
+            0x63 => Ok(RefType::RefNull(self.parse_heaptype()?)),
+            _ => {
+                self.pos -= 1;
+                Ok(RefType::Abs(self.parse_abs_heaptype()?))
+            }
+        }
+    }
+    #[cfg(feature = "wasm")]
+    fn parse_refnull_instr_type(&mut self) -> Result<RefNullInstrType> {
+        self.parse_reftype()
+    }
+
+    #[cfg(feature = "wasmgc")]
+    fn parse_refnull_instr_type(&mut self) -> Result<RefNullInstrType> {
+        self.parse_heaptype()
+    }
+
+    fn parse_heaptype(&mut self) -> Result<HeapType> {
+        let prev_pos = self.pos;
+        let s33 = self.parse_leb128_i64()?;
+        if s33 >= 0 {
+            Ok(HeapType::TypeIdx(s33 as u32))
+        } else {
+            self.pos = prev_pos;
+            Ok(HeapType::Abs(self.parse_abs_heaptype()?))
+        }
+    }
+    fn parse_abs_heaptype(&mut self) -> Result<AbsHeapType> {
+        Ok(self
+            .next_byte()
+            .map_err(|_| "Expected absheaptype")?
+            .try_into()
+            .map_err(|_| "Invalid absheaptype")?)
     }
     fn parse_leb128_u32(&mut self) -> Result<u32> {
         let mut result = 0;

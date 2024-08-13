@@ -1,9 +1,28 @@
 use std::collections::HashMap;
 
+#[cfg(feature = "wasm")]
 #[derive(Debug)]
 pub enum SectionContent {
     Custom { name: String },
     Type(Vec<FuncType>),
+    Import(Import),
+    Function(Vec<TypeIdx>),
+    Table(Vec<TableType>),
+    Memory(Vec<Limits>),
+    Global(Vec<Global>),
+    Export(HashMap<String, ExportDesc>),
+    Start,
+    Element(Vec<Element>),
+    Code(Vec<Func>),
+    Data(Vec<Data>),
+    DataCount,
+}
+
+#[cfg(feature = "wasmgc")]
+#[derive(Debug)]
+pub enum SectionContent {
+    Custom { name: String },
+    Type(Vec<CompositeType>),
     Import(Import),
     Function(Vec<TypeIdx>),
     Table(Vec<TableType>),
@@ -23,9 +42,25 @@ pub struct Import {
     pub imported_functions: Vec<(String, String)>,
 }
 
+#[cfg(feature = "wasm")]
 #[derive(Debug, Default)]
 pub struct Modules {
     pub types: Vec<FuncType>,
+    pub func: Vec<TypeIdx>,
+    pub table: Vec<TableType>,
+    pub memory: Vec<Limits>,
+    pub global: Vec<Global>,
+    pub elem: Vec<Element>,
+    pub code: Vec<Func>,
+    pub data: Vec<Data>,
+    pub import: Import,
+    pub export: HashMap<String, ExportDesc>,
+}
+
+#[cfg(feature = "wasmgc")]
+#[derive(Debug, Default)]
+pub struct Modules {
+    pub types: Vec<CompositeType>,
     pub func: Vec<TypeIdx>,
     pub table: Vec<TableType>,
     pub memory: Vec<Limits>,
@@ -129,6 +164,7 @@ macro_rules! enum_try_from_int {
     }
 }
 
+#[cfg(feature = "wasm")]
 enum_try_from_int! {
     #[repr(u8)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,6 +179,18 @@ enum_try_from_int! {
     }
 }
 
+#[cfg(feature = "wasmgc")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValType {
+    I32,
+    I64,
+    F32,
+    F64,
+    V128,
+    RefType(RefType),
+}
+
+#[cfg(feature = "wasm")]
 enum_try_from_int! {
     #[repr(u8)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,6 +198,48 @@ enum_try_from_int! {
         FuncRef = 0x70,
         ExternRef = 0x6f,
     }
+}
+
+enum_try_from_int! {
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum AbsHeapType {
+        NoFunc = 0x73,
+        NoExtern = 0x72,
+        None = 0x71,
+        Func = 0x70,
+        Extern = 0x6f,
+        Any = 0x6e,
+        Eq = 0x6d,
+        I31 = 0x6c,
+        Struct = 0x6b,
+        Array = 0x6a,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HeapType {
+    Abs(AbsHeapType),
+    TypeIdx(u32),
+}
+
+#[cfg(feature = "wasmgc")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RefType {
+    Ref(HeapType),
+    RefNull(HeapType),
+    Abs(AbsHeapType),
+}
+
+impl RefType {
+    #[cfg(feature = "wasm")]
+    pub const FUNCREF: Self = Self::FuncRef;
+    #[cfg(feature = "wasmgc")]
+    pub const FUNCREF: Self = Self::RefNull(HeapType::Abs(AbsHeapType::Func));
+    #[cfg(feature = "wasm")]
+    pub const EXTERNREF: Self = Self::ExternRef;
+    #[cfg(feature = "wasmgc")]
+    pub const EXTERNREF: Self = Self::RefNull(HeapType::Abs(AbsHeapType::Extern));
 }
 
 #[derive(Debug, Clone)]
@@ -173,6 +263,7 @@ pub enum BlockType {
 }
 
 impl BlockType {
+    #[cfg(feature = "wasm")]
     pub fn count_args(&self, types: &Vec<FuncType>) -> usize {
         match self {
             BlockType::Empty => 0,
@@ -180,11 +271,37 @@ impl BlockType {
             BlockType::TypeIdx(type_idx) => types[*type_idx as usize].params.len(),
         }
     }
+
+    #[cfg(feature = "wasmgc")]
+    pub fn count_args(&self, types: &Vec<CompositeType>) -> usize {
+        match self {
+            BlockType::Empty => 0,
+            BlockType::ValType(_) => 0,
+            BlockType::TypeIdx(type_idx) => match &types[*type_idx as usize] {
+                CompositeType::FuncType(functype) => functype.params.len(),
+                _ => 0,
+            },
+        }
+    }
+
+    #[cfg(feature = "wasm")]
     pub fn count_results(&self, types: &Vec<FuncType>) -> usize {
         match self {
             BlockType::Empty => 0,
             BlockType::ValType(_) => 1,
             BlockType::TypeIdx(type_idx) => types[*type_idx as usize].results.len(),
+        }
+    }
+
+    #[cfg(feature = "wasmgc")]
+    pub fn count_results(&self, types: &Vec<CompositeType>) -> usize {
+        match self {
+            BlockType::Empty => 0,
+            BlockType::ValType(_) => 1,
+            BlockType::TypeIdx(type_idx) => match &types[*type_idx as usize] {
+                CompositeType::FuncType(functype) => functype.results.len(),
+                _ => 1,
+            },
         }
     }
 }
@@ -195,6 +312,44 @@ pub type ResultType = Vec<ValType>;
 pub struct FuncType {
     pub params: ResultType,
     pub results: ResultType,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CompositeType {
+    ArrayType(FieldType),
+    StructType(Vec<FieldType>),
+    FuncType(FuncType),
+}
+
+impl TryFrom<CompositeType> for FuncType {
+    type Error = ();
+    fn try_from(value: CompositeType) -> Result<Self, Self::Error> {
+        match value {
+            CompositeType::FuncType(functype) => Ok(functype),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldType {
+    pub ty: StorageType,
+    pub is_mutable: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StorageType {
+    ValType(ValType),
+    PackedType(PackedType),
+}
+
+enum_try_from_int! {
+    #[repr(u8)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum PackedType {
+        I8 = 0x78,
+        I16 = 0x77,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -251,10 +406,24 @@ pub enum Instr {
     Frelop(Opcode),
     Cutop(Opcode),
     TruncSat(TruncSatOp),
-    RefNull(RefType),
+    RefNull(RefNullInstrType),
     RefIsNull,
     RefFunc(u32),
+    WasmGCInstr(WasmGCInstr),
 }
+
+#[derive(Debug, Clone)]
+pub enum WasmGCInstr {
+    StructNew(u32),
+    StructGet { typeidx: u32, fieldidx: u32 },
+    StructSet { typeidx: u32, fieldidx: u32 },
+}
+
+#[cfg(feature = "wasm")]
+pub type RefNullInstrType = RefType;
+
+#[cfg(feature = "wasmgc")]
+pub type RefNullInstrType = HeapType;
 
 #[derive(Debug, Clone)]
 pub struct Memarg {
@@ -474,6 +643,7 @@ enum_try_from_int! {
         RefNull = 0xd0,
         RefIsNull = 0xd1,
         RefFunc = 0xd2,
+        ExtendWasmGC = 0xfb,
         ExtendFC = 0xfc,
     }
 }

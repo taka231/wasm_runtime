@@ -1,14 +1,30 @@
 use std::collections::HashMap;
 
-use crate::wasm::{Data, ExportDesc, Func, FuncType, ImportDesc, Limits, Mode, Modules, RefType};
+use crate::wasm::{
+    AbsHeapType, CompositeType, Data, ExportDesc, Func, FuncType, ImportDesc, Limits, Mode,
+    Modules, RefType, TableType,
+};
 
 use super::{value::Value, Runtime};
 
 type Result<T> = std::result::Result<T, String>;
 
+#[cfg(feature = "wasm")]
 pub struct Store {
     pub func_instances: Vec<FuncInstance>,
     pub types: Vec<FuncType>,
+    pub imports: HashMap<(String, String), ImportDesc>,
+    pub exports: HashMap<String, ExportDesc>,
+    pub memory: Memory,
+    pub global: Vec<Global>,
+    pub tables: Vec<Table>,
+    pub data: Vec<Vec<u8>>,
+}
+
+#[cfg(feature = "wasmgc")]
+pub struct Store {
+    pub func_instances: Vec<FuncInstance>,
+    pub types: Vec<CompositeType>,
     pub imports: HashMap<(String, String), ImportDesc>,
     pub exports: HashMap<String, ExportDesc>,
     pub memory: Memory,
@@ -41,15 +57,31 @@ impl Store {
         }
         let mut tables = vec![];
         for table_type in modules.table {
-            let table = match table_type.elem_type {
-                RefType::FuncRef => Table::Funcs(vec![None; table_type.limits.min as usize]),
-                RefType::ExternRef => Table::Refs(vec![None; table_type.limits.min as usize]),
-            };
+            #[cfg(feature = "wasmgc")]
+            fn tabletype_to_table(table_type: TableType) -> Table {
+                match table_type.elem_type {
+                    RefType::FUNCREF | RefType::Abs(AbsHeapType::Func) => {
+                        Table::Funcs(vec![None; table_type.limits.min as usize])
+                    }
+                    RefType::EXTERNREF | RefType::Abs(AbsHeapType::Extern) => {
+                        Table::Refs(vec![None; table_type.limits.min as usize])
+                    }
+                    _ => unimplemented!("expected funcref or externref"),
+                }
+            }
+            #[cfg(feature = "wasm")]
+            fn tabletype_to_table(table_type: TableType) -> Table {
+                match table_type.elem_type {
+                    RefType::FuncRef => Table::Funcs(vec![None; table_type.limits.min as usize]),
+                    RefType::ExternRef => Table::Refs(vec![None; table_type.limits.min as usize]),
+                }
+            }
+            let table = tabletype_to_table(table_type);
             tables.push(table);
         }
         for element in modules.elem {
             if let Mode::Active { tableidx, offset } = element.mode {
-                if element.ref_type == RefType::FuncRef {
+                if element.ref_type == RefType::FUNCREF {
                     let table = &mut tables[tableidx as usize];
                     let offset = match Runtime::eval_expr(offset).unwrap() {
                         Value::I32(n) => n as usize,
@@ -97,12 +129,12 @@ impl Store {
             let ImportDesc::Func(typeidx) = imports[&(module.clone(), name.clone())] else {
                 panic!("Invalid import type");
             };
-            let ty = types[typeidx as usize].clone();
+            let ty = types[typeidx as usize].clone().try_into().unwrap();
             let func = ExternalFunc { module, name, ty };
             func_instances.push(FuncInstance::External(func));
         }
         for i in 0..modules.func.len() {
-            let ty = types[modules.func[i] as usize].clone();
+            let ty = types[modules.func[i] as usize].clone().try_into().unwrap();
             let code = modules.code[i].clone();
             let func = InternalFunc { code, ty };
             func_instances.push(FuncInstance::Internal(func));

@@ -5,7 +5,7 @@ use wasm_runtime::{
     self,
     parser::Parser,
     runtime::{value::Value, Runtime},
-    wasm::RefType,
+    wasm::{AbsHeapType, HeapType, RefType},
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -103,14 +103,14 @@ impl Into<Value> for Val {
             }
             Val::Externref { value } => {
                 if value == Some("null".into()) {
-                    Value::RefNull(RefType::ExternRef)
+                    Value::REF_NULL_EXTERN
                 } else {
                     Value::ExternRef(value.unwrap().parse::<usize>().unwrap())
                 }
             }
             Val::Funcref { value } => {
                 if value == Some("null".into()) {
-                    Value::RefNull(RefType::FuncRef)
+                    Value::REF_NULL_FUNC
                 } else {
                     Value::FuncRef(value.unwrap().parse::<usize>().unwrap())
                 }

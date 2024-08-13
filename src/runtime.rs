@@ -10,7 +10,7 @@ use importer::Importer;
 use store::{FuncInstance, Store, Table};
 use value::Value;
 
-use crate::wasm::{ExportDesc, Instr, Locals, Memarg, Modules, Opcode, ValType};
+use crate::wasm::{ExportDesc, FuncType, Instr, Locals, Memarg, Modules, Opcode, ValType};
 
 pub struct Runtime {
     pub stack: Vec<Value>,
@@ -56,13 +56,13 @@ impl Runtime {
         if instrs.len() >= 2 {
             unimplemented!("expr with more than 1 instr");
         }
-        Ok(match instrs[0] {
-            Instr::I32Const(n) => Value::I32(n),
-            Instr::I64Const(n) => Value::I64(n),
-            Instr::F32Const(f) => Value::F32(f),
-            Instr::F64Const(f) => Value::F64(f),
-            Instr::RefNull(ref_type) => Value::RefNull(ref_type),
-            Instr::RefFunc(funcidx) => Value::FuncRef(funcidx as usize),
+        Ok(match &instrs[0] {
+            Instr::I32Const(n) => Value::I32(*n),
+            Instr::I64Const(n) => Value::I64(*n),
+            Instr::F32Const(f) => Value::F32(*f),
+            Instr::F64Const(f) => Value::F64(*f),
+            Instr::RefNull(ref_type) => Value::RefNull(ref_type.clone()),
+            Instr::RefFunc(funcidx) => Value::FuncRef(*funcidx as usize),
             _ => unimplemented!(),
         })
     }
@@ -128,8 +128,7 @@ impl Runtime {
                     ValType::F32 => Value::F32(0.0),
                     ValType::F64 => Value::F64(0.0),
                     ValType::V128 => todo!(),
-                    ValType::FuncRef => todo!(),
-                    ValType::ExternRef => todo!(),
+                    _ => todo!(),
                 });
             }
         }
@@ -293,7 +292,10 @@ impl Runtime {
                         None => Err("Table not found")?,
                         _ => Err("Invalid table type")?,
                     };
-                    let func_type = self.store.borrow().types[typeidx as usize].clone();
+                    let func_type: FuncType = self.store.borrow().types[typeidx as usize]
+                        .clone()
+                        .try_into()
+                        .map_err(|_| "Expected functype")?;
                     let called_func_type = self.store.borrow().func_instances[funcidx].ty();
                     if func_type != called_func_type {
                         Err("Function type mismatch")?;
@@ -424,6 +426,9 @@ impl Runtime {
                 Instr::RefFunc(funcidx) => {
                     let funcidx = *funcidx as usize;
                     self.stack.push(Value::FuncRef(funcidx));
+                }
+                Instr::WasmGCInstr(wasm_gc_instr) => {
+                    unimplemented!("{:?}", wasm_gc_instr)
                 }
             }
             frame.pc += 1;

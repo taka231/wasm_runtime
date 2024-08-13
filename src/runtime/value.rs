@@ -1,4 +1,4 @@
-use crate::wasm::RefType;
+use crate::wasm::{AbsHeapType, HeapType, RefNullInstrType, RefType};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -6,7 +6,7 @@ pub enum Value {
     I64(i64),
     F32(f32),
     F64(f64),
-    RefNull(RefType),
+    RefNull(RefNullInstrType),
     ExternRef(usize),
     FuncRef(usize),
 }
@@ -57,6 +57,15 @@ impl Value {
             _ => false,
         }
     }
+
+    #[cfg(feature = "wasmgc")]
+    pub const REF_NULL_EXTERN: Value = Value::RefNull(HeapType::Abs(AbsHeapType::Extern));
+    #[cfg(feature = "wasm")]
+    pub const REF_NULL_EXTERN: Value = Value::RefNull(RefType::ExternRef);
+    #[cfg(feature = "wasmgc")]
+    pub const REF_NULL_FUNC: Value = Value::RefNull(HeapType::Abs(AbsHeapType::Func));
+    #[cfg(feature = "wasm")]
+    pub const REF_NULL_FUNC: Value = Value::RefNull(RefType::FuncRef);
 }
 
 macro_rules! impl_into_value {
