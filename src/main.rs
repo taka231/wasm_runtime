@@ -17,7 +17,7 @@ fn main() {
     file.read_to_end(&mut bytes).unwrap();
     let mut parser = Parser::new(&bytes);
     let module = parser.parse().unwrap();
-    println!("{:?}", module);
+    // println!("{:?}", module);
     let wasi = WasiSnapshotPreview1::new();
     let mut runtime = Runtime::new(module, Some(Box::new(wasi)));
     let result = runtime.call_with_name("_start", vec![]).unwrap();

@@ -10,7 +10,9 @@ use importer::Importer;
 use store::{FuncInstance, Store, Table};
 use value::Value;
 
-use crate::wasm::{ExportDesc, FuncType, Instr, Locals, Memarg, Modules, Opcode, ValType};
+use crate::wasm::{
+    AbsHeapType, ExportDesc, FuncType, HeapType, Instr, Locals, Memarg, Modules, Opcode, ValType,
+};
 
 pub struct Runtime {
     pub stack: Vec<Value>,
@@ -128,6 +130,16 @@ impl Runtime {
                     ValType::F32 => Value::F32(0.0),
                     ValType::F64 => Value::F64(0.0),
                     ValType::V128 => todo!(),
+                    ValType::RefType(ref_type)
+                        if ref_type.is_structref(&self.store.borrow().types) =>
+                    {
+                        Value::RefNull(HeapType::Abs(AbsHeapType::Struct))
+                    }
+                    ValType::RefType(ref_type)
+                        if ref_type.is_arrayref(&self.store.borrow().types) =>
+                    {
+                        Value::RefNull(HeapType::Abs(AbsHeapType::Array))
+                    }
                     _ => todo!(),
                 });
             }
@@ -428,7 +440,7 @@ impl Runtime {
                     self.stack.push(Value::FuncRef(funcidx));
                 }
                 Instr::WasmGCInstr(wasm_gc_instr) => {
-                    unimplemented!("{:?}", wasm_gc_instr)
+                    self.exec_wasm_gc_instr(wasm_gc_instr)?;
                 }
             }
             frame.pc += 1;

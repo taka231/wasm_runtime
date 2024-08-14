@@ -1,15 +1,19 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::wasm::{
     AbsHeapType, CompositeType, Data, ExportDesc, Func, FuncType, ImportDesc, Limits, Mode,
     Modules, RefType, TableType,
 };
 
-use super::{value::Value, Runtime};
+use super::{
+    value::{ArrayValue, StructValue, Value},
+    Runtime,
+};
 
 type Result<T> = std::result::Result<T, String>;
 
 #[cfg(feature = "wasm")]
+#[derive(Default)]
 pub struct Store {
     pub func_instances: Vec<FuncInstance>,
     pub types: Vec<FuncType>,
@@ -22,40 +26,38 @@ pub struct Store {
 }
 
 #[cfg(feature = "wasmgc")]
+#[derive(Default)]
 pub struct Store {
     pub func_instances: Vec<FuncInstance>,
     pub types: Vec<CompositeType>,
+    pub strcuttype_offset: BTreeMap<u32, (Vec<u32>, usize)>,
     pub imports: HashMap<(String, String), ImportDesc>,
     pub exports: HashMap<String, ExportDesc>,
     pub memory: Memory,
     pub global: Vec<Global>,
     pub tables: Vec<Table>,
     pub data: Vec<Vec<u8>>,
+    pub structs: Vec<StructValue>,
+    pub arrays: Vec<ArrayValue>,
 }
 
 impl Store {
     pub fn new(modules: Modules) -> Self {
-        let types = modules.types;
-        let imports = modules.import.import_map;
-        let exports = modules.export;
-        let mut memory = if modules.memory.len() >= 1 {
-            Memory::new(&modules.memory[0])
-        } else {
-            Memory {
-                data: vec![],
-                max: None,
-            }
+        let mut store = Self::default();
+        store.types = modules.types;
+        store.imports = modules.import.import_map;
+        store.exports = modules.export;
+        if modules.memory.len() >= 1 {
+            store.memory = Memory::new(&modules.memory[0])
         };
-        let mut globals = vec![];
         for global in modules.global {
             let value = Runtime::eval_expr(global.init).unwrap();
             let global = Global {
                 value,
                 mutable: global.is_mutable,
             };
-            globals.push(global);
+            store.global.push(global);
         }
-        let mut tables = vec![];
         for table_type in modules.table {
             #[cfg(feature = "wasmgc")]
             fn tabletype_to_table(table_type: TableType) -> Table {
@@ -77,12 +79,12 @@ impl Store {
                 }
             }
             let table = tabletype_to_table(table_type);
-            tables.push(table);
+            store.tables.push(table);
         }
         for element in modules.elem {
             if let Mode::Active { tableidx, offset } = element.mode {
                 if element.ref_type == RefType::FUNCREF {
-                    let table = &mut tables[tableidx as usize];
+                    let table = &mut store.tables[tableidx as usize];
                     let offset = match Runtime::eval_expr(offset).unwrap() {
                         Value::I32(n) => n as usize,
                         Value::I64(n) => n as usize,
@@ -99,7 +101,6 @@ impl Store {
                 }
             }
         }
-        let mut data_ = vec![];
         for data in modules.data {
             match data {
                 Data::Active {
@@ -116,41 +117,55 @@ impl Store {
                         _ => panic!("Invalid offset type"),
                     };
                     let addr = offset as usize;
-                    memory.data[addr..addr + data.len()].copy_from_slice(&data);
-                    data_.push(data);
+                    store.memory.data[addr..addr + data.len()].copy_from_slice(&data);
+                    store.data.push(data);
                 }
                 Data::Passive { data } => {
-                    data_.push(data);
+                    store.data.push(data);
                 }
             }
         }
-        let mut func_instances = vec![];
         for (module, name) in modules.import.imported_functions {
-            let ImportDesc::Func(typeidx) = imports[&(module.clone(), name.clone())] else {
+            let ImportDesc::Func(typeidx) = store.imports[&(module.clone(), name.clone())] else {
                 panic!("Invalid import type");
             };
-            let ty = types[typeidx as usize].clone().try_into().unwrap();
+            let ty = store.types[typeidx as usize].clone().try_into().unwrap();
             let func = ExternalFunc { module, name, ty };
-            func_instances.push(FuncInstance::External(func));
+            store.func_instances.push(FuncInstance::External(func));
         }
         for i in 0..modules.func.len() {
-            let ty = types[modules.func[i] as usize].clone().try_into().unwrap();
+            let ty = store.types[modules.func[i] as usize]
+                .clone()
+                .try_into()
+                .unwrap();
             let code = modules.code[i].clone();
             let func = InternalFunc { code, ty };
-            func_instances.push(FuncInstance::Internal(func));
+            store.func_instances.push(FuncInstance::Internal(func));
         }
 
-        Self {
-            func_instances,
-            types,
-            imports,
-            exports,
-            memory,
-            global: globals,
-            tables,
-            data: data_,
+        store.calc_struct_offset();
+
+        store
+    }
+
+    #[cfg(feature = "wasmgc")]
+    fn calc_struct_offset(&mut self) {
+        for (i, ty) in self.types.iter().enumerate() {
+            if let CompositeType::StructType(fields) = ty {
+                let mut offset = 0;
+                let mut offsets = vec![];
+                for field in fields {
+                    offsets.push(offset as u32);
+                    offset += field.ty.size_of();
+                }
+                self.strcuttype_offset.insert(i as u32, (offsets, offset));
+            }
         }
     }
+
+    #[cfg(feature = "wasm")]
+    fn calc_struct_offset(&mut self) {}
+
     pub fn global_get(&self, index: u32) -> Result<Value> {
         self.global
             .get(index as usize)
@@ -238,7 +253,7 @@ pub struct Global {
     pub mutable: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Memory {
     pub data: Vec<u8>,
     pub max: Option<u32>,

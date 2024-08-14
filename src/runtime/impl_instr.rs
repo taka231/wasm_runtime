@@ -1,9 +1,9 @@
 use crate::{
     runtime::Value,
-    wasm::{Opcode, TruncSatOp},
+    wasm::{CompositeType, Opcode, TruncSatOp, WasmGCInstr},
 };
 
-use super::Runtime;
+use super::{value::StructValue, Runtime};
 
 impl Runtime {
     pub(super) fn exec_memory_instr_with_memarg(
@@ -356,5 +356,99 @@ impl Runtime {
             }
         };
         Ok(result)
+    }
+
+    #[cfg(feature = "wasmgc")]
+    pub(super) fn exec_wasm_gc_instr(&mut self, instr: &WasmGCInstr) -> Result<(), String> {
+        match instr {
+            WasmGCInstr::StructNew(typeidx) => {
+                let CompositeType::StructType(struct_type) = self
+                    .store
+                    .borrow()
+                    .types
+                    .get(*typeidx as usize)
+                    .ok_or("type not found")?
+                    .clone()
+                else {
+                    Err("struct type required")?
+                };
+                let (offset, size) = self
+                    .store
+                    .borrow()
+                    .strcuttype_offset
+                    .get(typeidx)
+                    .expect("struct type offset")
+                    .clone();
+                if self.stack.len() < offset.len() {
+                    Err("stack underflow")?
+                }
+                let values = self.stack.split_off(self.stack.len() - offset.len());
+                let mut fields: Vec<u8> = Vec::new();
+                for value in values {
+                    fields.extend(value.to_vec_u8())
+                }
+                if fields.len() != size {
+                    Err("field size is invalid")?
+                }
+                self.store.borrow_mut().structs.push(StructValue {
+                    types: struct_type.clone(),
+                    values: fields,
+                });
+                let index = self.store.borrow().structs.len() - 1;
+                self.stack.push(Value::StructRef(index));
+            }
+            WasmGCInstr::StructGet { typeidx, fieldidx } => {
+                let Value::StructRef(struct_ref) = self.stack.pop().ok_or("expected value")? else {
+                    Err("struct reference required")?
+                };
+
+                let struct_data = self
+                    .store
+                    .borrow()
+                    .structs
+                    .get(struct_ref)
+                    .ok_or("struct not found")?
+                    .clone();
+                let (struct_offset, size) = self
+                    .store
+                    .borrow()
+                    .strcuttype_offset
+                    .get(typeidx)
+                    .expect("struct type offset")
+                    .clone();
+                let value = struct_data.get_field(
+                    *fieldidx as usize,
+                    &self.store.borrow().types,
+                    &struct_offset,
+                    size as u32,
+                )?;
+                self.stack.push(value);
+            }
+            WasmGCInstr::StructSet { typeidx, fieldidx } => {
+                let value = self.stack.pop().ok_or("expected value")?;
+                let Value::StructRef(struct_ref) = self.stack.pop().ok_or("expected value")? else {
+                    Err("struct reference required")?
+                };
+                let (struct_offset, size) = self
+                    .store
+                    .borrow()
+                    .strcuttype_offset
+                    .get(typeidx)
+                    .expect("struct type offset")
+                    .clone();
+                let mut store = self.store.borrow_mut();
+                let struct_data = store
+                    .structs
+                    .get_mut(struct_ref)
+                    .ok_or("struct not found")?;
+                struct_data.set_field(*fieldidx as usize, &value, &struct_offset, size as u32)?;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "wasm")]
+    pub(super) fn exec_wasm_gc_instr(&mut self, instr: &WasmGCInstr) -> Result<(), String> {
+        Err("wasmgc feature is not enabled".into())
     }
 }

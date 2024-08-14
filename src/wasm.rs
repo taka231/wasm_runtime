@@ -190,6 +190,17 @@ pub enum ValType {
     RefType(RefType),
 }
 
+#[cfg(feature = "wasmgc")]
+impl ValType {
+    fn size_of(&self) -> usize {
+        match self {
+            ValType::I32 | ValType::F32 | ValType::RefType(_) => 4,
+            ValType::I64 | ValType::F64 => 8,
+            ValType::V128 => 16,
+        }
+    }
+}
+
 #[cfg(feature = "wasm")]
 enum_try_from_int! {
     #[repr(u8)]
@@ -240,6 +251,33 @@ impl RefType {
     pub const EXTERNREF: Self = Self::ExternRef;
     #[cfg(feature = "wasmgc")]
     pub const EXTERNREF: Self = Self::RefNull(HeapType::Abs(AbsHeapType::Extern));
+
+    #[cfg(feature = "wasmgc")]
+    pub fn is_structref(&self, types: &[CompositeType]) -> bool {
+        match self {
+            RefType::Ref(HeapType::Abs(AbsHeapType::Struct))
+            | RefType::Abs(AbsHeapType::Struct) => true,
+            RefType::Ref(HeapType::TypeIdx(typeidx)) => match &types[*typeidx as usize] {
+                CompositeType::StructType(_) => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
+    #[cfg(feature = "wasmgc")]
+    pub fn is_arrayref(&self, types: &[CompositeType]) -> bool {
+        match self {
+            RefType::Ref(HeapType::Abs(AbsHeapType::Array)) | RefType::Abs(AbsHeapType::Array) => {
+                true
+            }
+            RefType::Ref(HeapType::TypeIdx(typeidx)) => match &types[*typeidx as usize] {
+                CompositeType::ArrayType(_) => true,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -343,12 +381,32 @@ pub enum StorageType {
     PackedType(PackedType),
 }
 
+#[cfg(feature = "wasmgc")]
+impl StorageType {
+    pub fn size_of(&self) -> usize {
+        match self {
+            StorageType::ValType(valtype) => valtype.size_of(),
+            StorageType::PackedType(packedtype) => packedtype.size_of(),
+        }
+    }
+}
+
 enum_try_from_int! {
     #[repr(u8)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum PackedType {
         I8 = 0x78,
         I16 = 0x77,
+    }
+}
+
+#[cfg(feature = "wasmgc")]
+impl PackedType {
+    fn size_of(&self) -> usize {
+        match self {
+            PackedType::I8 => 1,
+            PackedType::I16 => 2,
+        }
     }
 }
 
