@@ -30,6 +30,7 @@ pub enum Value {
 }
 
 impl Value {
+    #[cfg(feature = "wasmgc")]
     pub fn default(ty: &StorageType) -> Option<Self> {
         match ty {
             StorageType::ValType(ty) => match ty {
@@ -42,6 +43,22 @@ impl Value {
                     Some(Value::RefNull(heaptype.clone()))
                 }
                 ValType::RefType(_) => None,
+            },
+            StorageType::PackedType(_) => todo!(),
+        }
+    }
+
+    #[cfg(feature = "wasm")]
+    pub fn default(ty: &StorageType) -> Option<Self> {
+        match ty {
+            StorageType::ValType(ty) => match ty {
+                ValType::I32 => Some(Value::I32(0)),
+                ValType::I64 => Some(Value::I64(0)),
+                ValType::F32 => Some(Value::F32(0.0)),
+                ValType::F64 => Some(Value::F64(0.0)),
+                ValType::V128 => todo!(),
+                ValType::FuncRef => Some(Value::RefNull(RefNullInstrType::FuncRef)),
+                ValType::ExternRef => Some(Value::RefNull(RefNullInstrType::ExternRef)),
             },
             StorageType::PackedType(_) => todo!(),
         }

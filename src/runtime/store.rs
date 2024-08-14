@@ -13,7 +13,7 @@ use super::{
 type Result<T> = std::result::Result<T, String>;
 
 #[cfg(feature = "wasm")]
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Store {
     pub func_instances: Vec<FuncInstance>,
     pub types: Vec<FuncType>,

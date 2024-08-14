@@ -11,7 +11,8 @@ use store::{FuncInstance, Store, Table};
 use value::Value;
 
 use crate::wasm::{
-    AbsHeapType, ExportDesc, FuncType, HeapType, Instr, Locals, Memarg, Modules, Opcode, ValType,
+    AbsHeapType, ExportDesc, FuncType, HeapType, Instr, Locals, Memarg, Modules, Opcode,
+    StorageType, ValType,
 };
 
 pub struct Runtime {
@@ -134,24 +135,9 @@ impl Runtime {
         let mut locals = self.stack.split_off(bottom);
         for Locals { count, ty } in &func.code.locals {
             for _ in 0..*count {
-                locals.push(match ty {
-                    ValType::I32 => Value::I32(0),
-                    ValType::I64 => Value::I64(0),
-                    ValType::F32 => Value::F32(0.0),
-                    ValType::F64 => Value::F64(0.0),
-                    ValType::V128 => todo!(),
-                    ValType::RefType(ref_type)
-                        if ref_type.is_structref(&self.store.borrow().types) =>
-                    {
-                        Value::RefNull(HeapType::Abs(AbsHeapType::Struct))
-                    }
-                    ValType::RefType(ref_type)
-                        if ref_type.is_arrayref(&self.store.borrow().types) =>
-                    {
-                        Value::RefNull(HeapType::Abs(AbsHeapType::Array))
-                    }
-                    _ => todo!(),
-                });
+                locals.push(
+                    Value::default(&StorageType::ValType(ty.clone())).ok_or("expected value")?,
+                );
             }
         }
         let mut frame = Frame {
