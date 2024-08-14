@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::runtime::value::Value;
+
 #[cfg(feature = "wasm")]
 #[derive(Debug)]
 pub enum SectionContent {
@@ -239,6 +241,7 @@ pub enum HeapType {
 pub enum RefType {
     Ref(HeapType),
     RefNull(HeapType),
+    // todo! remove this
     Abs(AbsHeapType),
 }
 
@@ -475,6 +478,11 @@ pub enum WasmGCInstr {
     StructNew(u32),
     StructGet { typeidx: u32, fieldidx: u32 },
     StructSet { typeidx: u32, fieldidx: u32 },
+    ArrayNew(u32),
+    ArrayNewDefault(u32),
+    ArrayGet(u32),
+    ArraySet(u32),
+    ArrayLen,
 }
 
 #[cfg(feature = "wasm")]

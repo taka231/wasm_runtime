@@ -26,7 +26,7 @@ pub struct Store {
 }
 
 #[cfg(feature = "wasmgc")]
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Store {
     pub func_instances: Vec<FuncInstance>,
     pub types: Vec<CompositeType>,
@@ -51,7 +51,7 @@ impl Store {
             store.memory = Memory::new(&modules.memory[0])
         };
         for global in modules.global {
-            let value = Runtime::eval_expr(global.init).unwrap();
+            let value = Runtime::eval_expr(&store, global.init).unwrap();
             let global = Global {
                 value,
                 mutable: global.is_mutable,
@@ -84,12 +84,12 @@ impl Store {
         for element in modules.elem {
             if let Mode::Active { tableidx, offset } = element.mode {
                 if element.ref_type == RefType::FUNCREF {
-                    let table = &mut store.tables[tableidx as usize];
-                    let offset = match Runtime::eval_expr(offset).unwrap() {
+                    let offset = match Runtime::eval_expr(&store, offset).unwrap() {
                         Value::I32(n) => n as usize,
                         Value::I64(n) => n as usize,
                         _ => panic!("Invalid offset type"),
                     };
+                    let table = &mut store.tables[tableidx as usize];
                     match table {
                         Table::Funcs(funcs) => {
                             for (i, funcidx) in element.funcidxs.iter().enumerate() {
@@ -111,7 +111,7 @@ impl Store {
                     if memidx != 0 {
                         panic!("Invalid memory index");
                     }
-                    let offset = match Runtime::eval_expr(offset).unwrap() {
+                    let offset = match Runtime::eval_expr(&store, offset).unwrap() {
                         Value::I32(n) => n as u32,
                         Value::I64(n) => n as u32,
                         _ => panic!("Invalid offset type"),
@@ -241,19 +241,19 @@ pub struct ExternalFunc {
     pub ty: FuncType,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Table {
     Funcs(Vec<Option<usize>>),
     Refs(Vec<Option<Value>>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Global {
     pub value: Value,
     pub mutable: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Memory {
     pub data: Vec<u8>,
     pub max: Option<u32>,

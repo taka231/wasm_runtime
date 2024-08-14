@@ -360,6 +360,10 @@ impl Runtime {
 
     #[cfg(feature = "wasmgc")]
     pub(super) fn exec_wasm_gc_instr(&mut self, instr: &WasmGCInstr) -> Result<(), String> {
+        use crate::wasm::{FieldType, RefType, StorageType};
+
+        use super::value::ArrayValue;
+
         match instr {
             WasmGCInstr::StructNew(typeidx) => {
                 let CompositeType::StructType(struct_type) = self
@@ -442,6 +446,109 @@ impl Runtime {
                     .get_mut(struct_ref)
                     .ok_or("struct not found")?;
                 struct_data.set_field(*fieldidx as usize, &value, &struct_offset, size as u32)?;
+            }
+            WasmGCInstr::ArrayNew(typeidx) => {
+                let n = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                let val = self.stack.pop().ok_or("expected value")?;
+                let CompositeType::ArrayType(array_type) = self
+                    .store
+                    .borrow()
+                    .types
+                    .get(*typeidx as usize)
+                    .ok_or("type not found")?
+                    .clone()
+                else {
+                    Err("array type required")?
+                };
+                let array_size = n * array_type.ty.size_of() as usize;
+                let array = ArrayValue {
+                    ty: array_type,
+                    values: vec![0; array_size],
+                };
+                self.store.borrow_mut().arrays.push(array);
+                let array_ref = self.store.borrow().arrays.len() - 1;
+                self.stack.push(Value::ArrayRef(array_ref));
+            }
+            WasmGCInstr::ArrayNewDefault(typeidx) => {
+                let n = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                let CompositeType::ArrayType(array_type) = self
+                    .store
+                    .borrow()
+                    .types
+                    .get(*typeidx as usize)
+                    .ok_or("type not found")?
+                    .clone()
+                else {
+                    Err("array type required")?
+                };
+                let values = Value::to_vec_u8(
+                    &Value::default(&array_type.ty).ok_or("default value not exists")?,
+                )
+                .repeat(n);
+                let array_size = n * array_type.ty.size_of() as usize;
+                assert!(values.len() == array_size);
+                let array = ArrayValue {
+                    ty: array_type,
+                    values,
+                };
+                self.store.borrow_mut().arrays.push(array);
+                let array_ref = self.store.borrow().arrays.len() - 1;
+                self.stack.push(Value::ArrayRef(array_ref));
+            }
+            WasmGCInstr::ArrayGet(typeidx) => {
+                let start = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                let Value::ArrayRef(array_ref) = self.stack.pop().ok_or("expected value")? else {
+                    Err("array reference required")?
+                };
+                let (size, ty) = {
+                    let store = self.store.borrow();
+                    let CompositeType::ArrayType(array_type) =
+                        store.types.get(*typeidx as usize).ok_or("type not found")?
+                    else {
+                        Err("array type required")?
+                    };
+                    (array_type.ty.size_of() as usize, array_type.ty.clone())
+                };
+                let end = start + size;
+                let store = self.store.borrow();
+                let array = store.arrays.get(array_ref).ok_or("array not found")?;
+                // todo: check ref.null
+                let vec = array.values.get(start..end).ok_or("invalid index")?;
+                let value = Value::from_vec_u8(vec, &ty, &store.types)?;
+                self.stack.push(value);
+            }
+            WasmGCInstr::ArraySet(typeidx) => {
+                let value = self.stack.pop().ok_or("expected value")?;
+                let start = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                let Value::ArrayRef(array_ref) = self.stack.pop().ok_or("expected value")? else {
+                    Err("array reference required")?
+                };
+                let size = {
+                    let store = self.store.borrow();
+                    let CompositeType::ArrayType(array_type) =
+                        store.types.get(*typeidx as usize).ok_or("type not found")?
+                    else {
+                        Err("array type required")?
+                    };
+                    array_type.ty.size_of() as usize
+                };
+                let end = start + size;
+                let mut store = self.store.borrow_mut();
+                let array = store.arrays.get_mut(array_ref).ok_or("array not found")?;
+                if end > array.values.len() {
+                    Err("invalid index")?
+                }
+                array.values[start..end].copy_from_slice(&value.to_vec_u8());
+            }
+            WasmGCInstr::ArrayLen => {
+                let Value::ArrayRef(array_ref) = self.stack.pop().ok_or("expected value")? else {
+                    Err("array reference required")?
+                };
+                let store = self.store.borrow();
+                let array = store.arrays.get(array_ref).ok_or("array not found")?;
+                let value_size = array.ty.ty.size_of() as usize;
+                self.stack
+                    .push(Value::I32((array.values.len() / value_size) as i32));
             }
         }
         Ok(())

@@ -29,6 +29,25 @@ pub enum Value {
     ArrayRef(usize),
 }
 
+impl Value {
+    pub fn default(ty: &StorageType) -> Option<Self> {
+        match ty {
+            StorageType::ValType(ty) => match ty {
+                ValType::I32 => Some(Value::I32(0)),
+                ValType::I64 => Some(Value::I64(0)),
+                ValType::F32 => Some(Value::F32(0.0)),
+                ValType::F64 => Some(Value::F64(0.0)),
+                ValType::V128 => todo!(),
+                ValType::RefType(RefType::RefNull(heaptype)) => {
+                    Some(Value::RefNull(heaptype.clone()))
+                }
+                ValType::RefType(_) => None,
+            },
+            StorageType::PackedType(_) => todo!(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructValue {
     pub types: Vec<FieldType>,

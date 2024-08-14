@@ -21,7 +21,7 @@ pub struct Runtime {
     pub importers: HashMap<String, Box<dyn Importer>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default, Clone)]
 pub struct Frame {
     pub pc: usize,
     pub sp: usize,
@@ -54,19 +54,29 @@ impl Runtime {
         }
     }
 
-    pub fn eval_expr(instrs: Vec<Instr>) -> Result<Value, String> {
-        if instrs.len() >= 2 {
-            unimplemented!("expr with more than 1 instr");
+    pub fn eval_expr(store: &Store, instrs: Vec<Instr>) -> Result<Value, String> {
+        let mut instrs = instrs.clone();
+        instrs.push(Instr::Return);
+        let mut runtime = Runtime {
+            stack: vec![],
+            frames: vec![],
+            store: Rc::new(RefCell::new(store.clone())),
+            importers: HashMap::new(),
+        };
+        let mut frame = Frame {
+            pc: 0,
+            sp: 0,
+            instrs,
+            return_num: 1,
+            locals: vec![],
+            labels: vec![],
+        };
+        loop {
+            let is_func_end = runtime.exec_instr(&mut frame)?;
+            if is_func_end {
+                return Ok(runtime.stack.pop().ok_or("expected value")?);
+            }
         }
-        Ok(match &instrs[0] {
-            Instr::I32Const(n) => Value::I32(*n),
-            Instr::I64Const(n) => Value::I64(*n),
-            Instr::F32Const(f) => Value::F32(*f),
-            Instr::F64Const(f) => Value::F64(*f),
-            Instr::RefNull(ref_type) => Value::RefNull(ref_type.clone()),
-            Instr::RefFunc(funcidx) => Value::FuncRef(*funcidx as usize),
-            _ => unimplemented!(),
-        })
     }
 
     pub fn call_with_name(&mut self, name: &str, args: Vec<Value>) -> Result<Vec<Value>, String> {
@@ -153,299 +163,309 @@ impl Runtime {
             labels: vec![],
         };
         loop {
-            let pc = frame.pc;
-            match &frame.instrs[pc] {
-                Instr::Unreachable => Err("unreachable")?,
-                Instr::Nop => {}
-                Instr::I64Const(n) => {
-                    self.stack.push(n.into());
-                }
-                Instr::I32Const(n) => {
-                    self.stack.push(n.into());
-                }
-                Instr::F32Const(f) => {
-                    self.stack.push(f.into());
-                }
-                Instr::F64Const(f) => {
-                    self.stack.push(f.into());
-                }
-                Instr::LocalSet(n) => {
-                    let value = self.stack.pop().ok_or("expected value")?;
-                    frame.locals[*n as usize] = value.into();
-                }
-                Instr::LocalTee(n) => {
-                    let value = self.stack.last().ok_or("expected value")?;
-                    frame.locals[*n as usize] = value.clone();
-                }
-                Instr::LocalGet(n) => {
-                    let value = frame.locals[*n as usize].clone();
-                    self.stack.push(value);
-                }
-                Instr::GlobalGet(n) => {
-                    let value = self.store.borrow().global_get(*n)?;
-                    self.stack.push(value);
-                }
-                Instr::GlobalSet(n) => {
-                    let value = self.stack.pop().ok_or("expected value")?;
-                    self.store.borrow_mut().global_set(*n, value)?;
-                }
-                Instr::MemoryInstrWithMemarg(op, Memarg { offset, .. }) => {
-                    self.exec_memory_instr_with_memarg(op, offset)?;
-                }
-                Instr::Block {
-                    block_type,
-                    jump_pc,
-                } => {
-                    let types = &self.store.borrow().types;
-                    let param_num = block_type.count_args(&types);
-                    frame.labels.push(Label {
-                        sp: self.stack.len() - param_num,
-                        return_num: block_type.count_results(&types),
-                        jump_pc: *jump_pc,
-                    });
-                }
-                Instr::Loop {
-                    block_type,
-                    jump_pc,
-                } => {
-                    let types = &self.store.borrow().types;
-                    let param_num = block_type.count_args(&types);
-                    frame.labels.push(Label {
-                        sp: self.stack.len() - param_num,
-                        return_num: block_type.count_results(&types),
-                        jump_pc: *jump_pc,
-                    });
-                }
-                Instr::If {
-                    block_type,
-                    jump_pc,
-                } => {
-                    let types = &self.store.borrow().types;
-                    let value = self.stack.pop().ok_or("expected value")?;
-                    let param_num = block_type.count_args(&types);
-                    let mut jump_pc = *jump_pc;
-                    if value.as_i32()? == 0 {
-                        frame.pc = jump_pc;
-                        if let Instr::Else { jump_pc: else_pc } = &frame.instrs[jump_pc] {
-                            jump_pc = *else_pc;
-                        } else {
-                            // jump before the end instruction
-                            frame.pc -= 1;
-                        }
-                    }
-                    frame.labels.push(Label {
-                        sp: self.stack.len() - param_num,
-                        return_num: block_type.count_results(&types),
-                        jump_pc,
-                    });
-                }
-                Instr::Br(n) => {
-                    let n = *n as usize;
-                    let is_func_end = self.pop_labels(&mut frame, n)?;
-                    if is_func_end {
-                        break;
-                    }
-                    continue;
-                }
-                Instr::BrIf(n) => {
-                    let n = *n as usize;
-                    let value = self.stack.pop().ok_or("expected value")?;
-                    if value.as_i32()? != 0 {
-                        let is_func_end = self.pop_labels(&mut frame, n)?;
-                        if is_func_end {
-                            break;
-                        }
-                        continue;
-                    }
-                }
-                Instr::BrTable(labels, default) => {
-                    let n = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
-                    let n = if n < labels.len() {
-                        labels[n]
+            let is_func_end = self.exec_instr(&mut frame)?;
+            if is_func_end {
+                break;
+            }
+        }
+        self.trunc_and_stack_results(frame.sp, frame.return_num)
+    }
+    fn exec_instr(&mut self, frame: &mut Frame) -> Result<bool, String> {
+        let pc = frame.pc;
+        match &frame.instrs[pc] {
+            Instr::Unreachable => Err("unreachable")?,
+            Instr::Nop => {}
+            Instr::I64Const(n) => {
+                self.stack.push(n.into());
+            }
+            Instr::I32Const(n) => {
+                self.stack.push(n.into());
+            }
+            Instr::F32Const(f) => {
+                self.stack.push(f.into());
+            }
+            Instr::F64Const(f) => {
+                self.stack.push(f.into());
+            }
+            Instr::LocalSet(n) => {
+                let value = self.stack.pop().ok_or("expected value")?;
+                frame.locals[*n as usize] = value.into();
+            }
+            Instr::LocalTee(n) => {
+                let value = self.stack.last().ok_or("expected value")?;
+                frame.locals[*n as usize] = value.clone();
+            }
+            Instr::LocalGet(n) => {
+                let value = frame.locals[*n as usize].clone();
+                self.stack.push(value);
+            }
+            Instr::GlobalGet(n) => {
+                let value = self.store.borrow().global_get(*n)?;
+                self.stack.push(value);
+            }
+            Instr::GlobalSet(n) => {
+                let value = self.stack.pop().ok_or("expected value")?;
+                self.store.borrow_mut().global_set(*n, value)?;
+            }
+            Instr::MemoryInstrWithMemarg(op, Memarg { offset, .. }) => {
+                self.exec_memory_instr_with_memarg(op, offset)?;
+            }
+            Instr::Block {
+                block_type,
+                jump_pc,
+            } => {
+                let types = &self.store.borrow().types;
+                let param_num = block_type.count_args(&types);
+                frame.labels.push(Label {
+                    sp: self.stack.len() - param_num,
+                    return_num: block_type.count_results(&types),
+                    jump_pc: *jump_pc,
+                });
+            }
+            Instr::Loop {
+                block_type,
+                jump_pc,
+            } => {
+                let types = &self.store.borrow().types;
+                let param_num = block_type.count_args(&types);
+                frame.labels.push(Label {
+                    sp: self.stack.len() - param_num,
+                    return_num: block_type.count_results(&types),
+                    jump_pc: *jump_pc,
+                });
+            }
+            Instr::If {
+                block_type,
+                jump_pc,
+            } => {
+                let types = &self.store.borrow().types;
+                let value = self.stack.pop().ok_or("expected value")?;
+                let param_num = block_type.count_args(&types);
+                let mut jump_pc = *jump_pc;
+                if value.as_i32()? == 0 {
+                    frame.pc = jump_pc;
+                    if let Instr::Else { jump_pc: else_pc } = &frame.instrs[jump_pc] {
+                        jump_pc = *else_pc;
                     } else {
-                        *default
-                    } as usize;
-                    let is_func_end = self.pop_labels(&mut frame, n)?;
-                    if is_func_end {
-                        break;
+                        // jump before the end instruction
+                        frame.pc -= 1;
                     }
-                    continue;
                 }
-                Instr::End => match frame.labels.pop() {
+                frame.labels.push(Label {
+                    sp: self.stack.len() - param_num,
+                    return_num: block_type.count_results(&types),
+                    jump_pc,
+                });
+            }
+            Instr::Br(n) => {
+                let n = *n as usize;
+                let is_func_end = self.pop_labels(frame, n)?;
+                if is_func_end {
+                    return Ok(true);
+                }
+                return Ok(false);
+            }
+            Instr::BrIf(n) => {
+                let n = *n as usize;
+                let value = self.stack.pop().ok_or("expected value")?;
+                if value.as_i32()? != 0 {
+                    let is_func_end = self.pop_labels(frame, n)?;
+                    if is_func_end {
+                        return Ok(true);
+                    }
+                    return Ok(false);
+                }
+            }
+            Instr::BrTable(labels, default) => {
+                let n = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                let n = if n < labels.len() {
+                    labels[n]
+                } else {
+                    *default
+                } as usize;
+                let is_func_end = self.pop_labels(frame, n)?;
+                if is_func_end {
+                    return Ok(true);
+                }
+                return Ok(false);
+            }
+            Instr::End => match frame.labels.pop() {
+                Some(Label { sp, return_num, .. }) => {
+                    self.trunc_and_stack_results(sp, return_num)?;
+                }
+                None => return Ok(true),
+            },
+            Instr::Else { jump_pc } => {
+                frame.pc = *jump_pc;
+                match frame.labels.pop() {
                     Some(Label { sp, return_num, .. }) => {
                         self.trunc_and_stack_results(sp, return_num)?;
                     }
-                    None => break,
-                },
-                Instr::Else { jump_pc } => {
-                    frame.pc = *jump_pc;
-                    match frame.labels.pop() {
-                        Some(Label { sp, return_num, .. }) => {
-                            self.trunc_and_stack_results(sp, return_num)?;
-                        }
-                        None => Err("Expected label")?,
-                    }
-                }
-                Instr::Return => break,
-                Instr::Call(n) => {
-                    let n = *n;
-                    self.frames.push(frame);
-                    self.call(n as usize)?;
-                    frame = self.frames.pop().ok_or("expected frame")?;
-                }
-                Instr::CallIndirect(typeidx, tableidx) => {
-                    let typeidx = *typeidx;
-                    let tableidx = *tableidx;
-                    let funcidx = match &self.store.borrow().tables.get(tableidx as usize) {
-                        Some(Table::Funcs(funcs)) => {
-                            let index = self.stack.pop().ok_or("expected value")?.as_i32()?;
-                            funcs[index as usize].ok_or("expected function index")?
-                        }
-                        None => Err("Table not found")?,
-                        _ => Err("Invalid table type")?,
-                    };
-                    let func_type: FuncType = self.store.borrow().types[typeidx as usize]
-                        .clone()
-                        .try_into()
-                        .map_err(|_| "Expected functype")?;
-                    let called_func_type = self.store.borrow().func_instances[funcidx].ty();
-                    if func_type != called_func_type {
-                        Err("Function type mismatch")?;
-                    }
-                    self.frames.push(frame);
-                    self.call(funcidx)?;
-                    frame = self.frames.pop().ok_or("expected frame")?;
-                }
-                Instr::Drop => {
-                    self.stack.pop().ok_or("expected value")?;
-                }
-                Instr::Select => {
-                    let selector = self.stack.pop().ok_or("expected value")?.as_i32()?;
-                    let b = self.stack.pop().ok_or("expected value")?;
-                    let a = self.stack.pop().ok_or("expected value")?;
-                    if selector != 0 {
-                        self.stack.push(a);
-                    } else {
-                        self.stack.push(b);
-                    }
-                }
-                Instr::SelectValType(_) => {
-                    let selector = self.stack.pop().ok_or("expected value")?.as_i32()?;
-                    let b = self.stack.pop().ok_or("expected value")?;
-                    let a = self.stack.pop().ok_or("expected value")?;
-                    if selector != 0 {
-                        self.stack.push(a);
-                    } else {
-                        self.stack.push(b);
-                    }
-                }
-                Instr::MemorySize => {
-                    self.stack.push(self.store.borrow().memory.size());
-                }
-                Instr::MemoryGrow => {
-                    let grow_size = self.stack.pop().ok_or("expected value")?.as_i32()?;
-                    self.stack
-                        .push(self.store.borrow_mut().memory.grow(grow_size as usize));
-                }
-                Instr::MemoryFill => {
-                    let size = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
-                    let val = self.stack.pop().ok_or("expected value")?.as_i32()?;
-                    let addr = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
-                    self.store.borrow_mut().memory.fill(addr, size, val as u8)?;
-                }
-                Instr::MemoryCopy => {
-                    let size = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
-                    let src = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
-                    let dest = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
-                    self.store.borrow_mut().memory.copy(src, dest, size)?;
-                }
-                Instr::MemoryInit(dataidx) => {
-                    let dataidx = *dataidx as usize;
-                    let size = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
-                    let src = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
-                    let dest = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
-                    self.store
-                        .borrow_mut()
-                        .memory_init(dataidx, src, dest, size)?;
-                }
-                Instr::DataDrop(dataidx) => {
-                    self.store.borrow_mut().data_drop(*dataidx as usize)?;
-                }
-                Instr::Ibinop(op) => {
-                    let b = self.stack.pop().ok_or("expected value")?;
-                    let a = self.stack.pop().ok_or("expected value")?;
-                    let result = Self::exec_ibinop(op, a, b)?;
-                    self.stack.push(result);
-                }
-                Instr::Funop(op) => {
-                    let a = self.stack.pop().ok_or("expected value")?;
-                    let result = Self::exec_funop(op, a)?;
-                    self.stack.push(result);
-                }
-                Instr::Fbinop(op) => {
-                    let b = self.stack.pop().ok_or("expected value")?;
-                    let a = self.stack.pop().ok_or("expected value")?;
-                    let result = Self::exec_fbinop(op, a, b)?;
-                    self.stack.push(result);
-                }
-                Instr::Frelop(op) => {
-                    let b = self.stack.pop().ok_or("expected value")?;
-                    let a = self.stack.pop().ok_or("expected value")?;
-                    let result = Self::exec_frelop(op, a, b)?;
-                    self.stack.push(result);
-                }
-                Instr::Irelop(op) => {
-                    let b = self.stack.pop().ok_or("expected value")?;
-                    let a = self.stack.pop().ok_or("expected value")?;
-                    let result = Self::exec_irelop(op, a, b)?;
-                    self.stack.push(result);
-                }
-                Instr::Iunop(op) => {
-                    let a = self.stack.pop().ok_or("expected value")?;
-                    let result = Self::exec_iunop(op, a)?;
-                    self.stack.push(result);
-                }
-                Instr::Itestop(op) => {
-                    let a = self.stack.pop().ok_or("expected value")?;
-                    let result = match op {
-                        Opcode::I32Eqz => ((a.as_i32()? == 0) as i32).into(),
-                        Opcode::I64Eqz => ((a.as_i64()? == 0) as i32).into(),
-                        _ => unreachable!("opcode {:?} is not a testop", op),
-                    };
-                    self.stack.push(result);
-                }
-                Instr::Cutop(op) => {
-                    let a = self.stack.pop().ok_or("expected value")?;
-                    let result = Self::exec_cutop(op, a)?;
-                    self.stack.push(result);
-                }
-                Instr::TruncSat(op) => {
-                    let a = self.stack.pop().ok_or("expected value")?;
-                    let result = Self::exec_trunc_sat(op, a)?;
-                    self.stack.push(result);
-                }
-                Instr::RefNull(ref_type) => {
-                    self.stack.push(Value::RefNull(ref_type.clone()));
-                }
-                Instr::RefIsNull => {
-                    let value = self.stack.pop().ok_or("expected value")?;
-                    let result = match value {
-                        Value::RefNull(_) => 1,
-                        _ => 0,
-                    };
-                    self.stack.push(Value::I32(result));
-                }
-                Instr::RefFunc(funcidx) => {
-                    let funcidx = *funcidx as usize;
-                    self.stack.push(Value::FuncRef(funcidx));
-                }
-                Instr::WasmGCInstr(wasm_gc_instr) => {
-                    self.exec_wasm_gc_instr(wasm_gc_instr)?;
+                    None => Err("Expected label")?,
                 }
             }
-            frame.pc += 1;
+            Instr::Return => return Ok(true),
+            Instr::Call(n) => {
+                let n = *n;
+                // let taked_frame = std::mem::take(frame);
+                // self.frames.push(taked_frame);
+                self.frames.push(frame.clone());
+                self.call(n as usize)?;
+                *frame = self.frames.pop().ok_or("expected frame")?;
+            }
+            Instr::CallIndirect(typeidx, tableidx) => {
+                let typeidx = *typeidx;
+                let tableidx = *tableidx;
+                let funcidx = match &self.store.borrow().tables.get(tableidx as usize) {
+                    Some(Table::Funcs(funcs)) => {
+                        let index = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                        funcs[index as usize].ok_or("expected function index")?
+                    }
+                    None => Err("Table not found")?,
+                    _ => Err("Invalid table type")?,
+                };
+                let func_type: FuncType = self.store.borrow().types[typeidx as usize]
+                    .clone()
+                    .try_into()
+                    .map_err(|_| "Expected functype")?;
+                let called_func_type = self.store.borrow().func_instances[funcidx].ty();
+                if func_type != called_func_type {
+                    Err("Function type mismatch")?;
+                }
+                let taked_frame = std::mem::take(frame);
+                self.frames.push(taked_frame);
+                self.call(funcidx)?;
+                *frame = self.frames.pop().ok_or("expected frame")?;
+            }
+            Instr::Drop => {
+                self.stack.pop().ok_or("expected value")?;
+            }
+            Instr::Select => {
+                let selector = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                let b = self.stack.pop().ok_or("expected value")?;
+                let a = self.stack.pop().ok_or("expected value")?;
+                if selector != 0 {
+                    self.stack.push(a);
+                } else {
+                    self.stack.push(b);
+                }
+            }
+            Instr::SelectValType(_) => {
+                let selector = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                let b = self.stack.pop().ok_or("expected value")?;
+                let a = self.stack.pop().ok_or("expected value")?;
+                if selector != 0 {
+                    self.stack.push(a);
+                } else {
+                    self.stack.push(b);
+                }
+            }
+            Instr::MemorySize => {
+                self.stack.push(self.store.borrow().memory.size());
+            }
+            Instr::MemoryGrow => {
+                let grow_size = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                self.stack
+                    .push(self.store.borrow_mut().memory.grow(grow_size as usize));
+            }
+            Instr::MemoryFill => {
+                let size = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                let val = self.stack.pop().ok_or("expected value")?.as_i32()?;
+                let addr = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                self.store.borrow_mut().memory.fill(addr, size, val as u8)?;
+            }
+            Instr::MemoryCopy => {
+                let size = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                let src = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                let dest = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                self.store.borrow_mut().memory.copy(src, dest, size)?;
+            }
+            Instr::MemoryInit(dataidx) => {
+                let dataidx = *dataidx as usize;
+                let size = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                let src = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                let dest = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
+                self.store
+                    .borrow_mut()
+                    .memory_init(dataidx, src, dest, size)?;
+            }
+            Instr::DataDrop(dataidx) => {
+                self.store.borrow_mut().data_drop(*dataidx as usize)?;
+            }
+            Instr::Ibinop(op) => {
+                let b = self.stack.pop().ok_or("expected value")?;
+                let a = self.stack.pop().ok_or("expected value")?;
+                let result = Self::exec_ibinop(op, a, b)?;
+                self.stack.push(result);
+            }
+            Instr::Funop(op) => {
+                let a = self.stack.pop().ok_or("expected value")?;
+                let result = Self::exec_funop(op, a)?;
+                self.stack.push(result);
+            }
+            Instr::Fbinop(op) => {
+                let b = self.stack.pop().ok_or("expected value")?;
+                let a = self.stack.pop().ok_or("expected value")?;
+                let result = Self::exec_fbinop(op, a, b)?;
+                self.stack.push(result);
+            }
+            Instr::Frelop(op) => {
+                let b = self.stack.pop().ok_or("expected value")?;
+                let a = self.stack.pop().ok_or("expected value")?;
+                let result = Self::exec_frelop(op, a, b)?;
+                self.stack.push(result);
+            }
+            Instr::Irelop(op) => {
+                let b = self.stack.pop().ok_or("expected value")?;
+                let a = self.stack.pop().ok_or("expected value")?;
+                let result = Self::exec_irelop(op, a, b)?;
+                self.stack.push(result);
+            }
+            Instr::Iunop(op) => {
+                let a = self.stack.pop().ok_or("expected value")?;
+                let result = Self::exec_iunop(op, a)?;
+                self.stack.push(result);
+            }
+            Instr::Itestop(op) => {
+                let a = self.stack.pop().ok_or("expected value")?;
+                let result = match op {
+                    Opcode::I32Eqz => ((a.as_i32()? == 0) as i32).into(),
+                    Opcode::I64Eqz => ((a.as_i64()? == 0) as i32).into(),
+                    _ => unreachable!("opcode {:?} is not a testop", op),
+                };
+                self.stack.push(result);
+            }
+            Instr::Cutop(op) => {
+                let a = self.stack.pop().ok_or("expected value")?;
+                let result = Self::exec_cutop(op, a)?;
+                self.stack.push(result);
+            }
+            Instr::TruncSat(op) => {
+                let a = self.stack.pop().ok_or("expected value")?;
+                let result = Self::exec_trunc_sat(op, a)?;
+                self.stack.push(result);
+            }
+            Instr::RefNull(ref_type) => {
+                self.stack.push(Value::RefNull(ref_type.clone()));
+            }
+            Instr::RefIsNull => {
+                let value = self.stack.pop().ok_or("expected value")?;
+                let result = match value {
+                    Value::RefNull(_) => 1,
+                    _ => 0,
+                };
+                self.stack.push(Value::I32(result));
+            }
+            Instr::RefFunc(funcidx) => {
+                let funcidx = *funcidx as usize;
+                self.stack.push(Value::FuncRef(funcidx));
+            }
+            Instr::WasmGCInstr(wasm_gc_instr) => {
+                self.exec_wasm_gc_instr(wasm_gc_instr)?;
+            }
         }
-        self.trunc_and_stack_results(frame.sp, frame.return_num)
+        frame.pc += 1;
+        Ok(false)
     }
     fn trunc_and_stack_results(&mut self, sp: usize, result_num: usize) -> Result<(), String> {
         let mut pop_vec = Vec::new();

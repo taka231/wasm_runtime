@@ -67,3 +67,43 @@ fn test_struct() {
     let value = runtime.call_with_name("_start", vec![]).unwrap()[0].clone();
     assert_eq!(value, Value::I32(43));
 }
+
+#[cfg(feature = "wasmgc")]
+#[test]
+fn test_array() {
+    use wasm_runtime::runtime::value::ArrayValue;
+
+    let mut parser = Parser::new(include_bytes!("./wasmgc/array.wasm"));
+    let module = parser.parse().unwrap();
+    let mut runtime = wasm_runtime::runtime::Runtime::new(module, None);
+    let Value::ArrayRef(array_ref) = runtime.call_with_name("new", vec![]).unwrap()[0] else {
+        panic!("Expected ArrayRef");
+    };
+    let array_value = runtime
+        .store
+        .borrow()
+        .arrays
+        .get(array_ref)
+        .unwrap()
+        .clone();
+    assert_eq!(
+        array_value,
+        ArrayValue {
+            ty: FieldType {
+                ty: StorageType::ValType(ValType::F32),
+                is_mutable: false
+            },
+            values: vec![0; 12],
+        },
+    );
+    let value = runtime.call_with_name("get", vec![Value::I32(0)]).unwrap()[0].clone();
+    assert_eq!(value, Value::F32(0.0));
+    let value = runtime
+        .call_with_name("set_get", vec![Value::I32(1), Value::F32(7.0)])
+        .unwrap()[0]
+        .clone();
+    assert_eq!(value, Value::F32(7.0));
+    let len = runtime.call_with_name("len", vec![]).unwrap()[0].clone();
+    dbg!(&runtime.store.borrow().arrays);
+    assert_eq!(len, Value::I32(3));
+}

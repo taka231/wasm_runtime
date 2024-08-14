@@ -630,6 +630,24 @@ impl<'a> Parser<'a> {
                 let fieldidx = self.parse_leb128_u32()?;
                 Ok(WasmGCInstr::StructSet { typeidx, fieldidx })
             }
+            6 => {
+                let typeidx = self.parse_leb128_u32()?;
+                Ok(WasmGCInstr::ArrayNew(typeidx))
+            }
+            7 => {
+                let typeidx = self.parse_leb128_u32()?;
+                Ok(WasmGCInstr::ArrayNewDefault(typeidx))
+            }
+            11 => {
+                let typeidx = self.parse_leb128_u32()?;
+                Ok(WasmGCInstr::ArrayGet(typeidx))
+            }
+            14 => {
+                let typeidx = self.parse_leb128_u32()?;
+                Ok(WasmGCInstr::ArraySet(typeidx))
+            }
+            15 => Ok(WasmGCInstr::ArrayLen),
+
             0..=30 => unimplemented!("unimplemented wasmGC instruction: {byte}"),
             _ => Err("expected wasmGC instruction".into()),
         }
