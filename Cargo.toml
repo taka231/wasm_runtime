@@ -12,6 +12,6 @@ serde_json = "1.0.120"
 tempfile = "3.10.1"
 
 [features]
-default = ['wasm']
+default = ['wasmgc']
 wasm = []
 wasmgc = []

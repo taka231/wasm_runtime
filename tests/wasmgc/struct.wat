@@ -2,16 +2,16 @@
   (type $boxed-i32 (struct (field (mut i32))))
   (func $make
     (param $i i32)
-    (result (ref $boxed-i32))
+    (result (ref null $boxed-i32))
     (struct.new $boxed-i32 (local.get $i))
   )
   (func $get
-    (param $o (ref $boxed-i32))
+    (param $o (ref null $boxed-i32))
     (result i32)
     (struct.get $boxed-i32 0 (local.get $o))
   )
   (func $set
-    (param $o (ref $boxed-i32))
+    (param $o (ref null $boxed-i32))
     (param $i i32)
     (struct.set $boxed-i32 0 (local.get $o) (local.get $i))
   )
@@ -21,7 +21,7 @@
 
   (func (export "_start")
     (result i32)
-    (local $o (ref $boxed-i32))
+    (local $o (ref null $boxed-i32))
     (local $i i32)
     (local.set $i (i32.const 42))
     (local.set $o (call $make (local.get $i)))
