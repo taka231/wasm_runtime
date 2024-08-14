@@ -32,7 +32,7 @@ pub enum Value {
 impl Value {
     #[cfg(feature = "wasmgc")]
     pub fn default(ty: &StorageType) -> Option<Self> {
-        match dbg!(ty) {
+        match ty {
             StorageType::ValType(ty) => match ty {
                 ValType::I32 => Some(Value::I32(0)),
                 ValType::I64 => Some(Value::I64(0)),

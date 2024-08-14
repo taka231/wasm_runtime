@@ -7,7 +7,7 @@ pub mod wasi;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use importer::Importer;
-use store::{FuncInstance, Store, Table};
+use store::{FuncInstance, Global, Store, Table};
 use value::Value;
 
 use crate::wasm::{
@@ -55,7 +55,7 @@ impl Runtime {
         }
     }
 
-    pub fn eval_expr(store: &Store, instrs: Vec<Instr>) -> Result<Value, String> {
+    pub fn eval_expr(store: &mut Store, instrs: Vec<Instr>) -> Result<Value, String> {
         let mut instrs = instrs.clone();
         instrs.push(Instr::Return);
         let mut runtime = Runtime {
@@ -75,9 +75,26 @@ impl Runtime {
         loop {
             let is_func_end = runtime.exec_instr(&mut frame)?;
             if is_func_end {
+                store.heap = runtime.store.borrow().heap.clone();
                 return Ok(runtime.stack.pop().ok_or("expected value")?);
             }
         }
+    }
+
+    pub fn get_stack_and_frame_rootset<'a: 'b, 'b>(
+        &'a self,
+        current_frame: &'b Frame,
+    ) -> Vec<&'b Value> {
+        let mut rootset = Vec::new();
+        rootset.extend(self.stack.iter());
+        rootset.extend(current_frame.locals.iter());
+        rootset.extend(
+            self.frames
+                .iter()
+                .flat_map(|frame| frame.locals.iter())
+                .collect::<Vec<_>>(),
+        );
+        rootset
     }
 
     pub fn call_with_name(&mut self, name: &str, args: Vec<Value>) -> Result<Vec<Value>, String> {
@@ -154,6 +171,11 @@ impl Runtime {
                 break;
             }
         }
+        // dbg!(idx);
+        // dbg!(&self.store.borrow().heap);
+        // let rootset = self.get_stack_and_frame_rootset(&frame);
+        // self.store.borrow_mut().gc(&rootset)?;
+        // dbg!(&self.store.borrow().heap);
         self.trunc_and_stack_results(frame.sp, frame.return_num)
     }
     fn exec_instr(&mut self, frame: &mut Frame) -> Result<bool, String> {

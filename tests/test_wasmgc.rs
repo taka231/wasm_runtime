@@ -19,8 +19,9 @@ fn test_test() {
     let struct_value = runtime
         .store
         .borrow()
+        .heap
         .structs
-        .get(struct_ref)
+        .get(struct_ref as u32)
         .unwrap()
         .clone();
     assert_eq!(
@@ -76,14 +77,27 @@ fn test_array() {
     let mut parser = Parser::new(include_bytes!("./wasmgc/array.wasm"));
     let module = parser.parse().unwrap();
     let mut runtime = wasm_runtime::runtime::Runtime::new(module, None);
+    let global = runtime
+        .store
+        .borrow()
+        .global
+        .iter()
+        .map(|global| global.value.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(&global, &vec![Value::ArrayRef(1), Value::ArrayRef(2)]);
+    assert_eq!(
+        &runtime.store.borrow().heap.arrays.get(1).unwrap().values,
+        &(1.0_f32.to_le_bytes().repeat(3))
+    );
     let Value::ArrayRef(array_ref) = runtime.call_with_name("new", vec![]).unwrap()[0] else {
         panic!("Expected ArrayRef");
     };
     let array_value = runtime
         .store
         .borrow()
+        .heap
         .arrays
-        .get(array_ref)
+        .get(array_ref as u32)
         .unwrap()
         .clone();
     assert_eq!(
@@ -104,6 +118,8 @@ fn test_array() {
         .clone();
     assert_eq!(value, Value::F32(7.0));
     let len = runtime.call_with_name("len", vec![]).unwrap()[0].clone();
-    dbg!(&runtime.store.borrow().arrays);
     assert_eq!(len, Value::I32(3));
 }
+
+#[test]
+fn test_mandelbrot() {}

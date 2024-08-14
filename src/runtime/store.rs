@@ -1,8 +1,11 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    borrow::Borrow,
+    collections::{BTreeMap, HashMap, HashSet},
+};
 
 use crate::wasm::{
-    AbsHeapType, CompositeType, Data, ExportDesc, Func, FuncType, ImportDesc, Limits, Mode,
-    Modules, RefType, TableType,
+    AbsHeapType, CompositeType, Data, ExportDesc, FieldType, Func, FuncType, HeapType, ImportDesc,
+    Limits, Mode, Modules, RefType, StorageType, TableType, ValType,
 };
 
 use super::{
@@ -37,8 +40,7 @@ pub struct Store {
     pub global: Vec<Global>,
     pub tables: Vec<Table>,
     pub data: Vec<Vec<u8>>,
-    pub structs: Vec<StructValue>,
-    pub arrays: Vec<ArrayValue>,
+    pub heap: HeapManager,
 }
 
 impl Store {
@@ -51,7 +53,7 @@ impl Store {
             store.memory = Memory::new(&modules.memory[0])
         };
         for global in modules.global {
-            let value = Runtime::eval_expr(&store, global.init).unwrap();
+            let value = Runtime::eval_expr(&mut store, global.init).unwrap();
             let global = Global {
                 value,
                 mutable: global.is_mutable,
@@ -84,7 +86,7 @@ impl Store {
         for element in modules.elem {
             if let Mode::Active { tableidx, offset } = element.mode {
                 if element.ref_type == RefType::FUNCREF {
-                    let offset = match Runtime::eval_expr(&store, offset).unwrap() {
+                    let offset = match Runtime::eval_expr(&mut store, offset).unwrap() {
                         Value::I32(n) => n as usize,
                         Value::I64(n) => n as usize,
                         _ => panic!("Invalid offset type"),
@@ -111,7 +113,7 @@ impl Store {
                     if memidx != 0 {
                         panic!("Invalid memory index");
                     }
-                    let offset = match Runtime::eval_expr(&store, offset).unwrap() {
+                    let offset = match Runtime::eval_expr(&mut store, offset).unwrap() {
                         Value::I32(n) => n as u32,
                         Value::I64(n) => n as u32,
                         _ => panic!("Invalid offset type"),
@@ -209,6 +211,126 @@ impl Store {
             Err("Data not found")?;
         }
         self.data.get_mut(dataidx).ok_or("Data not found")?.clear();
+        Ok(())
+    }
+
+    pub fn gc(&mut self, root_set: &[&Value]) -> Result<()> {
+        let mut root_set = root_set.to_vec();
+        let global = self.global.clone();
+        root_set.extend(global.iter().map(|global| &global.value));
+        let mut reachable_structs: HashSet<u32> = HashSet::new();
+        let mut reachable_arrays: HashSet<u32> = HashSet::new();
+
+        for value in root_set {
+            self.mark(value, &mut reachable_structs, &mut reachable_arrays)?;
+        }
+        for index in self
+            .heap
+            .structs
+            .values
+            .keys()
+            .cloned()
+            .collect::<Vec<u32>>()
+        {
+            if !reachable_structs.contains(&index) {
+                self.heap.structs.values.remove(&index);
+            }
+        }
+        for index in self
+            .heap
+            .arrays
+            .values
+            .keys()
+            .cloned()
+            .collect::<Vec<u32>>()
+        {
+            if !reachable_arrays.contains(&index) {
+                self.heap.arrays.values.remove(&index);
+            }
+        }
+        Ok(())
+    }
+
+    fn mark(
+        &mut self,
+        value: &Value,
+        reachable_structs: &mut HashSet<u32>,
+        reachable_arrays: &mut HashSet<u32>,
+    ) -> Result<()> {
+        let heap = &mut self.heap;
+        match value {
+            Value::StructRef(index) => {
+                reachable_structs.insert(*index as u32);
+                let struct_value = heap
+                    .structs
+                    .get(*index as u32)
+                    .ok_or("Struct not found")?
+                    .clone();
+                for (i, field_type) in struct_value.types.iter().enumerate() {
+                    if let StorageType::ValType(ValType::RefType(reftype)) = &field_type.ty {
+                        let start = self.strcuttype_offset[&(*index as u32)].0[i] as usize;
+                        let end = start + field_type.ty.size_of();
+                        let field_value = Value::from_vec_u8(
+                            &struct_value.values[start..end],
+                            &field_type.ty,
+                            &self.types,
+                        )?;
+                        if reftype.is_structref(&self.types) {
+                            let Value::StructRef(index) = field_value else {
+                                unreachable!()
+                            };
+                            if !reachable_structs.contains(&(index as u32)) {
+                                self.mark(&field_value, reachable_structs, reachable_arrays)?;
+                            }
+                        } else if reftype.is_arrayref(&self.types) {
+                            let Value::ArrayRef(index) = field_value else {
+                                unreachable!()
+                            };
+                            if !reachable_arrays.contains(&(index as u32)) {
+                                self.mark(&field_value, reachable_structs, reachable_arrays)?;
+                            }
+                        }
+                    }
+                }
+            }
+            Value::ArrayRef(index) => {
+                reachable_arrays.insert(*index as u32);
+                let array_value = heap
+                    .arrays
+                    .get(*index as u32)
+                    .ok_or("Array not found")?
+                    .clone();
+                let field_type = &array_value.ty;
+                let field_size = field_type.ty.size_of();
+                if let StorageType::ValType(ValType::RefType(reftype)) = &field_type.ty {
+                    for i in 0..(array_value.values.len() / field_size) {
+                        let start = i * field_size;
+                        let end = start + field_size;
+                        let field_value = Value::from_vec_u8(
+                            &array_value.values[start..end],
+                            &field_type.ty,
+                            &self.types,
+                        )?;
+                        if reftype.is_structref(&self.types) {
+                            let Value::StructRef(index) = field_value else {
+                                unreachable!()
+                            };
+                            if !reachable_structs.contains(&(index as u32)) {
+                                self.mark(&field_value, reachable_structs, reachable_arrays)?;
+                            }
+                        } else if reftype.is_arrayref(&self.types) {
+                            let Value::ArrayRef(index) = field_value else {
+                                unreachable!()
+                            };
+                            if !reachable_arrays.contains(&(index as u32)) {
+                                self.mark(&field_value, reachable_structs, reachable_arrays)?;
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
         Ok(())
     }
 }
@@ -319,4 +441,44 @@ impl Memory {
         }
         Ok(())
     }
+}
+
+#[cfg(feature = "wasmgc")]
+#[derive(Debug, Clone)]
+pub struct HeapValueManager<T> {
+    pub values: HashMap<u32, T>,
+    pub num: u32,
+}
+
+impl<T> Default for HeapValueManager<T> {
+    fn default() -> Self {
+        Self {
+            values: HashMap::new(),
+            num: 0,
+        }
+    }
+}
+
+#[cfg(feature = "wasmgc")]
+impl<T> HeapValueManager<T> {
+    pub fn alloc(&mut self, value: T) -> u32 {
+        self.num += 1;
+        self.values.insert(self.num, value);
+        self.num
+    }
+
+    pub fn get(&self, index: u32) -> Option<&T> {
+        self.values.get(&index)
+    }
+
+    pub fn get_mut(&mut self, index: u32) -> Option<&mut T> {
+        self.values.get_mut(&index)
+    }
+}
+
+#[cfg(feature = "wasmgc")]
+#[derive(Debug, Clone, Default)]
+pub struct HeapManager {
+    pub structs: HeapValueManager<StructValue>,
+    pub arrays: HeapValueManager<ArrayValue>,
 }

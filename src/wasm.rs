@@ -259,8 +259,10 @@ impl RefType {
     pub fn is_structref(&self, types: &[CompositeType]) -> bool {
         match self {
             RefType::Ref(HeapType::Abs(AbsHeapType::Struct))
+            | RefType::RefNull(HeapType::Abs(AbsHeapType::Struct))
             | RefType::Abs(AbsHeapType::Struct) => true,
-            RefType::Ref(HeapType::TypeIdx(typeidx)) => match &types[*typeidx as usize] {
+            RefType::Ref(HeapType::TypeIdx(typeidx))
+            | RefType::RefNull(HeapType::TypeIdx(typeidx)) => match &types[*typeidx as usize] {
                 CompositeType::StructType(_) => true,
                 _ => false,
             },
@@ -271,10 +273,11 @@ impl RefType {
     #[cfg(feature = "wasmgc")]
     pub fn is_arrayref(&self, types: &[CompositeType]) -> bool {
         match self {
-            RefType::Ref(HeapType::Abs(AbsHeapType::Array)) | RefType::Abs(AbsHeapType::Array) => {
-                true
-            }
-            RefType::Ref(HeapType::TypeIdx(typeidx)) => match &types[*typeidx as usize] {
+            RefType::Ref(HeapType::Abs(AbsHeapType::Array))
+            | RefType::RefNull(HeapType::Abs(AbsHeapType::Array))
+            | RefType::Abs(AbsHeapType::Array) => true,
+            RefType::Ref(HeapType::TypeIdx(typeidx))
+            | RefType::RefNull(HeapType::TypeIdx(typeidx)) => match &types[*typeidx as usize] {
                 CompositeType::ArrayType(_) => true,
                 _ => false,
             },

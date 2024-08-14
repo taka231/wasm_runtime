@@ -360,8 +360,6 @@ impl Runtime {
 
     #[cfg(feature = "wasmgc")]
     pub(super) fn exec_wasm_gc_instr(&mut self, instr: &WasmGCInstr) -> Result<(), String> {
-        use crate::wasm::{FieldType, RefType, StorageType};
-
         use super::value::ArrayValue;
 
         match instr {
@@ -394,12 +392,11 @@ impl Runtime {
                 if fields.len() != size {
                     Err("field size is invalid")?
                 }
-                self.store.borrow_mut().structs.push(StructValue {
+                let index = self.store.borrow_mut().heap.structs.alloc(StructValue {
                     types: struct_type.clone(),
                     values: fields,
                 });
-                let index = self.store.borrow().structs.len() - 1;
-                self.stack.push(Value::StructRef(index));
+                self.stack.push(Value::StructRef(index as usize));
             }
             WasmGCInstr::StructGet { typeidx, fieldidx } => {
                 let Value::StructRef(struct_ref) = self.stack.pop().ok_or("expected value")? else {
@@ -409,8 +406,9 @@ impl Runtime {
                 let struct_data = self
                     .store
                     .borrow()
+                    .heap
                     .structs
-                    .get(struct_ref)
+                    .get(struct_ref as u32)
                     .ok_or("struct not found")?
                     .clone();
                 let (struct_offset, size) = self
@@ -442,8 +440,9 @@ impl Runtime {
                     .clone();
                 let mut store = self.store.borrow_mut();
                 let struct_data = store
+                    .heap
                     .structs
-                    .get_mut(struct_ref)
+                    .get_mut(struct_ref as u32)
                     .ok_or("struct not found")?;
                 struct_data.set_field(*fieldidx as usize, &value, &struct_offset, size as u32)?;
             }
@@ -460,14 +459,12 @@ impl Runtime {
                 else {
                     Err("array type required")?
                 };
-                let array_size = n * array_type.ty.size_of() as usize;
                 let array = ArrayValue {
                     ty: array_type,
-                    values: vec![0; array_size],
+                    values: Value::to_vec_u8(&val).repeat(n),
                 };
-                self.store.borrow_mut().arrays.push(array);
-                let array_ref = self.store.borrow().arrays.len() - 1;
-                self.stack.push(Value::ArrayRef(array_ref));
+                let array_ref = self.store.borrow_mut().heap.arrays.alloc(array);
+                self.stack.push(Value::ArrayRef(array_ref as usize));
             }
             WasmGCInstr::ArrayNewDefault(typeidx) => {
                 let n = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
@@ -491,9 +488,8 @@ impl Runtime {
                     ty: array_type,
                     values,
                 };
-                self.store.borrow_mut().arrays.push(array);
-                let array_ref = self.store.borrow().arrays.len() - 1;
-                self.stack.push(Value::ArrayRef(array_ref));
+                let array_ref = self.store.borrow_mut().heap.arrays.alloc(array);
+                self.stack.push(Value::ArrayRef(array_ref as usize));
             }
             WasmGCInstr::ArrayGet(typeidx) => {
                 let start = self.stack.pop().ok_or("expected value")?.as_i32()? as usize;
@@ -511,7 +507,11 @@ impl Runtime {
                 };
                 let end = start + size;
                 let store = self.store.borrow();
-                let array = store.arrays.get(array_ref).ok_or("array not found")?;
+                let array = store
+                    .heap
+                    .arrays
+                    .get(array_ref as u32)
+                    .ok_or("array not found")?;
                 // todo: check ref.null
                 let vec = array.values.get(start..end).ok_or("invalid index")?;
                 let value = Value::from_vec_u8(vec, &ty, &store.types)?;
@@ -534,7 +534,11 @@ impl Runtime {
                 };
                 let end = start + size;
                 let mut store = self.store.borrow_mut();
-                let array = store.arrays.get_mut(array_ref).ok_or("array not found")?;
+                let array = store
+                    .heap
+                    .arrays
+                    .get_mut(array_ref as u32)
+                    .ok_or("array not found")?;
                 if end > array.values.len() {
                     Err("invalid index")?
                 }
@@ -545,7 +549,11 @@ impl Runtime {
                     Err("array reference required")?
                 };
                 let store = self.store.borrow();
-                let array = store.arrays.get(array_ref).ok_or("array not found")?;
+                let array = store
+                    .heap
+                    .arrays
+                    .get(array_ref as u32)
+                    .ok_or("array not found")?;
                 let value_size = array.ty.ty.size_of() as usize;
                 self.stack
                     .push(Value::I32((array.values.len() / value_size) as i32));
