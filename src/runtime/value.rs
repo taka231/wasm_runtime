@@ -68,7 +68,7 @@ impl Value {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct StructValue {
     pub types: Vec<FieldType>,
     pub values: Vec<u8>,

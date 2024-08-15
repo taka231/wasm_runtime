@@ -126,14 +126,17 @@ fn test_mandelbrot() {
     let mut parser = Parser::new(include_bytes!("./wasmgc/mandelbrot.wasm"));
     let module = parser.parse().unwrap();
     let mut runtime = wasm_runtime::runtime::Runtime::new(module, None);
+    let min = -5.0;
+    let max = 5.0;
+    let delta = 0.01;
     let size = 1000;
     let Value::ArrayRef(array_ref) = runtime
         .call_with_name(
             "Mandelbrot",
             vec![
-                Value::F64(-5.0),
-                Value::F64(5.0),
-                Value::F64(0.001),
+                Value::F64(min),
+                Value::F64(max),
+                Value::F64(delta),
                 Value::I32(size),
             ],
         )
@@ -154,9 +157,12 @@ fn test_mandelbrot() {
             let start = i * size as usize + j;
             let value = &array.values[start..start + 4];
             let value = i32::from_le_bytes(value.try_into().unwrap());
-            if value == 1 {
-                // println!("{} {}", 0.001 * i as f32 - 5.0, 0.001 * j as f32 - 5.0);
-            }
+            // if value == 0 {
+            //     print!(" ");
+            // } else {
+            //     print!("*");
+            // }
         }
+        // println!();
     }
 }

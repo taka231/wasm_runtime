@@ -1,7 +1,4 @@
-use std::{
-    borrow::Borrow,
-    collections::{BTreeMap, HashMap, HashSet},
-};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::wasm::{
     AbsHeapType, CompositeType, Data, ExportDesc, FieldType, Func, FuncType, HeapType, ImportDesc,
@@ -214,7 +211,7 @@ impl Store {
         Ok(())
     }
 
-    #[cfg(feature = "wasmgc")]
+    #[cfg(not(feature = "disable_gc"))]
     pub fn gc(&mut self, root_set: &[&Value]) -> Result<()> {
         let start = std::time::Instant::now();
         let mut root_set = root_set.to_vec();
@@ -252,24 +249,36 @@ impl Store {
                     self.heap.arrays.values.remove(&index);
                 }
             }
-        } else if cfg!(feature = "copy_gc") {
+        } else if cfg!(feature = "copy_gc") && cfg!(not(feature = "mark_sweep_gc")) {
             // copy gc
-            let mut heap = HeapManager::default();
+            let mut struct_index_map = Vec::new();
             for index in reachable_structs {
-                heap.structs.values.insert(
-                    index,
-                    self.heap.structs.get(index).expect("must exists").clone(),
-                );
-                heap.structs.num = self.heap.structs.num;
+                let struct_value =
+                    std::mem::take(self.heap.structs.get_mut(index).expect("must exists"));
+                struct_index_map.push((index, struct_value));
             }
+            let mut array_index_map = Vec::new();
             for index in reachable_arrays {
-                heap.arrays.values.insert(
-                    index,
-                    self.heap.arrays.get(index).expect("must exists").clone(),
+                let array_value = std::mem::replace(
+                    self.heap.arrays.get_mut(index).expect("must exists"),
+                    ArrayValue {
+                        ty: FieldType {
+                            ty: StorageType::ValType(ValType::I32),
+                            is_mutable: false,
+                        },
+                        values: vec![],
+                    },
                 );
-                heap.arrays.num = self.heap.arrays.num;
+                array_index_map.push((index, array_value));
             }
-            self.heap = heap;
+            self.heap.structs.values.clear();
+            for (index, struct_value) in struct_index_map {
+                self.heap.structs.values.insert(index, struct_value);
+            }
+            self.heap.arrays.values.clear();
+            for (index, array_value) in array_index_map {
+                self.heap.arrays.values.insert(index, array_value);
+            }
         }
         if cfg!(feature = "gc_time_measure") {
             let elapsed = start.elapsed().as_millis();
@@ -278,17 +287,18 @@ impl Store {
         Ok(())
     }
 
+    #[cfg(not(feature = "disable_gc"))]
     fn mark(
         &mut self,
         value: &Value,
         reachable_structs: &mut HashSet<u32>,
         reachable_arrays: &mut HashSet<u32>,
     ) -> Result<()> {
-        let heap = &mut self.heap;
         match value {
             Value::StructRef(index) => {
                 reachable_structs.insert(*index as u32);
-                let struct_value = heap
+                let struct_value = self
+                    .heap
                     .structs
                     .get(*index as u32)
                     .ok_or("Struct not found")?
@@ -322,14 +332,21 @@ impl Store {
             }
             Value::ArrayRef(index) => {
                 reachable_arrays.insert(*index as u32);
-                let array_value = heap
+                let field_type = self
+                    .heap
                     .arrays
                     .get(*index as u32)
                     .ok_or("Array not found")?
+                    .ty
                     .clone();
-                let field_type = &array_value.ty;
                 let field_size = field_type.ty.size_of();
                 if let StorageType::ValType(ValType::RefType(reftype)) = &field_type.ty {
+                    let array_value = self
+                        .heap
+                        .arrays
+                        .get(*index as u32)
+                        .ok_or("Array not found")?
+                        .clone();
                     for i in 0..(array_value.values.len() / field_size) {
                         let start = i * field_size;
                         let end = start + field_size;
@@ -358,6 +375,11 @@ impl Store {
             }
             _ => {}
         }
+        Ok(())
+    }
+
+    #[cfg(feature = "disable_gc")]
+    pub fn gc(&mut self, root_set: &[&Value]) -> Result<()> {
         Ok(())
     }
 }

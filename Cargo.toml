@@ -13,8 +13,9 @@ tempfile = "3.10.1"
 
 [features]
 default = ['wasmgc']
-wasm = []
+wasm = ['disable_gc']
 wasmgc = ['copy_gc']
+disable_gc = []
 mark_sweep_gc = []
 copy_gc = []
 gc_log = []

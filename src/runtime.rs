@@ -180,18 +180,24 @@ impl Runtime {
                 break;
             }
             if cfg!(feature = "gc_log") {
-                if self.last_log_time.elapsed().as_millis() > HEAP_LOG_TIME {
+                let time = self.last_log_time.elapsed().as_millis();
+                if time >= HEAP_LOG_TIME {
                     dbg!(self.store.borrow().heap.structs.values.len());
                     self.last_log_time = std::time::Instant::now();
                 }
             }
-            if self.last_time.elapsed().as_millis() > GC_TIME {
+            let time = self.last_time.elapsed().as_millis();
+            if time >= GC_TIME {
                 if cfg!(feature = "gc_log") {
-                    dbg!(self.store.borrow().heap.structs.values.len());
-                    dbg!("GC");
+                    // dbg!(self.store.borrow().heap.structs.values.len());
+                    if !cfg!(feature = "disable_gc") {
+                        dbg!("GC");
+                    }
                 }
-                let rootset = self.get_stack_and_frame_rootset(&frame);
-                self.store.borrow_mut().gc(&rootset)?;
+                if cfg!(not(feature = "disable_gc")) {
+                    let rootset = self.get_stack_and_frame_rootset(&frame);
+                    self.store.borrow_mut().gc(&rootset)?;
+                }
                 self.last_time = std::time::Instant::now();
             }
         }
@@ -334,9 +340,8 @@ impl Runtime {
             Instr::Return => return Ok(true),
             Instr::Call(n) => {
                 let n = *n;
-                // let taked_frame = std::mem::take(frame);
-                // self.frames.push(taked_frame);
-                self.frames.push(frame.clone());
+                let taked_frame = std::mem::take(frame);
+                self.frames.push(taked_frame);
                 self.call(n as usize)?;
                 *frame = self.frames.pop().ok_or("expected frame")?;
             }
