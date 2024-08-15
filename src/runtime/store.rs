@@ -214,7 +214,9 @@ impl Store {
         Ok(())
     }
 
+    #[cfg(feature = "wasmgc")]
     pub fn gc(&mut self, root_set: &[&Value]) -> Result<()> {
+        let start = std::time::Instant::now();
         let mut root_set = root_set.to_vec();
         let global = self.global.clone();
         root_set.extend(global.iter().map(|global| &global.value));
@@ -224,29 +226,54 @@ impl Store {
         for value in root_set {
             self.mark(value, &mut reachable_structs, &mut reachable_arrays)?;
         }
-        for index in self
-            .heap
-            .structs
-            .values
-            .keys()
-            .cloned()
-            .collect::<Vec<u32>>()
-        {
-            if !reachable_structs.contains(&index) {
-                self.heap.structs.values.remove(&index);
+        // mark and sweep gc
+        if cfg!(feature = "mark_sweep_gc") {
+            for index in self
+                .heap
+                .structs
+                .values
+                .keys()
+                .cloned()
+                .collect::<Vec<u32>>()
+            {
+                if !reachable_structs.contains(&index) {
+                    self.heap.structs.values.remove(&index);
+                }
             }
+            for index in self
+                .heap
+                .arrays
+                .values
+                .keys()
+                .cloned()
+                .collect::<Vec<u32>>()
+            {
+                if !reachable_arrays.contains(&index) {
+                    self.heap.arrays.values.remove(&index);
+                }
+            }
+        } else if cfg!(feature = "copy_gc") {
+            // copy gc
+            let mut heap = HeapManager::default();
+            for index in reachable_structs {
+                heap.structs.values.insert(
+                    index,
+                    self.heap.structs.get(index).expect("must exists").clone(),
+                );
+                heap.structs.num = self.heap.structs.num;
+            }
+            for index in reachable_arrays {
+                heap.arrays.values.insert(
+                    index,
+                    self.heap.arrays.get(index).expect("must exists").clone(),
+                );
+                heap.arrays.num = self.heap.arrays.num;
+            }
+            self.heap = heap;
         }
-        for index in self
-            .heap
-            .arrays
-            .values
-            .keys()
-            .cloned()
-            .collect::<Vec<u32>>()
-        {
-            if !reachable_arrays.contains(&index) {
-                self.heap.arrays.values.remove(&index);
-            }
+        if cfg!(feature = "gc_time_measure") {
+            let elapsed = start.elapsed().as_millis();
+            println!("GC time: {}ms", elapsed);
         }
         Ok(())
     }

@@ -222,5 +222,6 @@
       i32.lt_s 
       br_if $loop_y
     )
+    (local.get $resultvec)
   )
 )

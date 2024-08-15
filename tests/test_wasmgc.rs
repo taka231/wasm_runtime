@@ -122,4 +122,41 @@ fn test_array() {
 }
 
 #[test]
-fn test_mandelbrot() {}
+fn test_mandelbrot() {
+    let mut parser = Parser::new(include_bytes!("./wasmgc/mandelbrot.wasm"));
+    let module = parser.parse().unwrap();
+    let mut runtime = wasm_runtime::runtime::Runtime::new(module, None);
+    let size = 1000;
+    let Value::ArrayRef(array_ref) = runtime
+        .call_with_name(
+            "Mandelbrot",
+            vec![
+                Value::F64(-5.0),
+                Value::F64(5.0),
+                Value::F64(0.001),
+                Value::I32(size),
+            ],
+        )
+        .unwrap()[0]
+    else {
+        panic!("Expected ArrayRef");
+    };
+    let array = runtime
+        .store
+        .borrow()
+        .heap
+        .arrays
+        .get(array_ref as u32)
+        .unwrap()
+        .clone();
+    for i in 0..(size as usize) {
+        for j in 0..(size as usize) {
+            let start = i * size as usize + j;
+            let value = &array.values[start..start + 4];
+            let value = i32::from_le_bytes(value.try_into().unwrap());
+            if value == 1 {
+                // println!("{} {}", 0.001 * i as f32 - 5.0, 0.001 * j as f32 - 5.0);
+            }
+        }
+    }
+}

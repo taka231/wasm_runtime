@@ -20,6 +20,8 @@ pub struct Runtime {
     pub frames: Vec<Frame>,
     pub store: Rc<RefCell<Store>>,
     pub importers: HashMap<String, Box<dyn Importer>>,
+    pub last_time: std::time::Instant,
+    pub last_log_time: std::time::Instant,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -39,6 +41,9 @@ pub struct Label {
     jump_pc: usize,
 }
 
+const GC_TIME: u128 = 1000;
+const HEAP_LOG_TIME: u128 = 100;
+
 impl Runtime {
     pub fn new(modules: Modules, wasi: Option<Box<dyn Importer>>) -> Runtime {
         let store = Rc::new(RefCell::new(Store::new(modules)));
@@ -52,6 +57,8 @@ impl Runtime {
             frames: vec![],
             store,
             importers,
+            last_time: std::time::Instant::now(),
+            last_log_time: std::time::Instant::now(),
         }
     }
 
@@ -63,6 +70,8 @@ impl Runtime {
             frames: vec![],
             store: Rc::new(RefCell::new(store.clone())),
             importers: HashMap::new(),
+            last_time: std::time::Instant::now(),
+            last_log_time: std::time::Instant::now(),
         };
         let mut frame = Frame {
             pc: 0,
@@ -170,12 +179,22 @@ impl Runtime {
             if is_func_end {
                 break;
             }
+            if cfg!(feature = "gc_log") {
+                if self.last_log_time.elapsed().as_millis() > HEAP_LOG_TIME {
+                    dbg!(self.store.borrow().heap.structs.values.len());
+                    self.last_log_time = std::time::Instant::now();
+                }
+            }
+            if self.last_time.elapsed().as_millis() > GC_TIME {
+                if cfg!(feature = "gc_log") {
+                    dbg!(self.store.borrow().heap.structs.values.len());
+                    dbg!("GC");
+                }
+                let rootset = self.get_stack_and_frame_rootset(&frame);
+                self.store.borrow_mut().gc(&rootset)?;
+                self.last_time = std::time::Instant::now();
+            }
         }
-        // dbg!(idx);
-        // dbg!(&self.store.borrow().heap);
-        // let rootset = self.get_stack_and_frame_rootset(&frame);
-        // self.store.borrow_mut().gc(&rootset)?;
-        // dbg!(&self.store.borrow().heap);
         self.trunc_and_stack_results(frame.sp, frame.return_num)
     }
     fn exec_instr(&mut self, frame: &mut Frame) -> Result<bool, String> {
